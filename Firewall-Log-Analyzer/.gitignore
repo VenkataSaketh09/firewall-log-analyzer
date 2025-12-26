@@ -4,3 +4,19 @@ __pycache__/
 *.log
 *.pkl
 venv/
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Frontend build
+dist/
+
+# Python
+*.pyc
+
+# Reports / exports
+reports/
