@@ -125,6 +125,106 @@ http://localhost:8000
   - `start_date` (datetime, optional): Start date
   - `end_date` (datetime, optional): End date
 
+## Threat Detection Endpoints
+
+### 7. Detect Brute Force Attacks (GET)
+- **GET** `/api/threats/brute-force`
+- **Query Parameters:**
+  - `time_window_minutes` (int, default: 15, max: 1440): Time window in minutes to check for failed attempts
+  - `threshold` (int, default: 5, max: 1000): Number of failed attempts to trigger detection
+  - `start_date` (datetime, optional): Start date for analysis (ISO format, default: last 24 hours)
+  - `end_date` (datetime, optional): End date for analysis (ISO format, default: now)
+  - `source_ip` (string, optional): Specific IP address to check
+
+- **Example:**
+  ```
+  GET /api/threats/brute-force?time_window_minutes=15&threshold=5&start_date=2024-01-01T00:00:00
+  ```
+
+- **Response:**
+  ```json
+  {
+    "detections": [
+      {
+        "source_ip": "192.168.1.100",
+        "total_attempts": 25,
+        "unique_usernames_attempted": 3,
+        "usernames_attempted": ["admin", "root", "user"],
+        "first_attempt": "2024-01-01T10:00:00",
+        "last_attempt": "2024-01-01T10:30:00",
+        "attack_windows": [
+          {
+            "window_start": "2024-01-01T10:00:00",
+            "window_end": "2024-01-01T10:14:30",
+            "attempt_count": 8,
+            "attempts": [
+              {
+                "timestamp": "2024-01-01T10:00:00",
+                "username": "admin",
+                "log_id": "..."
+              }
+            ]
+          }
+        ],
+        "severity": "HIGH"
+      }
+    ],
+    "total_detections": 1,
+    "time_window_minutes": 15,
+    "threshold": 5,
+    "time_range": {
+      "start": "2024-01-01T00:00:00",
+      "end": "2024-01-02T00:00:00"
+    }
+  }
+  ```
+
+### 8. Detect Brute Force Attacks (POST)
+- **POST** `/api/threats/brute-force`
+- **Request Body:**
+  ```json
+  {
+    "time_window_minutes": 15,
+    "threshold": 5,
+    "start_date": "2024-01-01T00:00:00",
+    "end_date": "2024-01-02T00:00:00",
+    "source_ip": "192.168.1.100"
+  }
+  ```
+- Returns the same response format as GET endpoint
+
+### 9. Get Brute Force Timeline for IP
+- **GET** `/api/threats/brute-force/{ip}/timeline`
+- **Path Parameters:**
+  - `ip` (string): Source IP address
+- **Query Parameters:**
+  - `start_date` (datetime, optional): Start date for timeline (ISO format, default: last 24 hours)
+  - `end_date` (datetime, optional): End date for timeline (ISO format, default: now)
+
+- **Example:**
+  ```
+  GET /api/threats/brute-force/192.168.1.100/timeline?start_date=2024-01-01T00:00:00
+  ```
+
+- **Response:**
+  ```json
+  {
+    "source_ip": "192.168.1.100",
+    "total_attempts": 25,
+    "timeline": [
+      {
+        "timestamp": "2024-01-01T10:00:00",
+        "username": "admin",
+        "log_id": "..."
+      }
+    ],
+    "time_range": {
+      "start": "2024-01-01T00:00:00",
+      "end": "2024-01-02T00:00:00"
+    }
+  }
+  ```
+
 ## Database Indexes
 
 The following indexes are automatically created on startup for optimized queries:
