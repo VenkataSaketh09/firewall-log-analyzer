@@ -1,12 +1,41 @@
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from app.db.mongo import logs_collection
+from app.routes.logs import router as logs_router
 from datetime import datetime
 
-app = FastAPI(title="Firewall Log Analyzer Backend")
+app = FastAPI(
+    title="Firewall Log Analyzer Backend",
+    description="API for firewall log analysis and monitoring",
+    version="1.0.0"
+)
+
+# CORS middleware configuration
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # In production, specify exact origins
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Include routers
+app.include_router(logs_router)
+
 
 @app.get("/health")
 def health_check():
     return {"status": "Backend is running"}
+
+
+@app.get("/")
+def root():
+    return {
+        "message": "Firewall Log Analyzer API",
+        "version": "1.0.0",
+        "docs": "/docs"
+    }
+
 
 @app.post("/test-db")
 def test_db():
