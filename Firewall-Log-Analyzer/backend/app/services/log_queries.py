@@ -144,34 +144,37 @@ def get_statistics(
     # Total logs
     total_logs = logs_collection.count_documents(query)
     
-    # Severity counts
+    # Severity counts - filter out None values
     severity_pipeline = [
-        {"$match": query},
+        {"$match": {**query, "severity": {"$ne": None}}},
         {"$group": {"_id": "$severity", "count": {"$sum": 1}}}
     ]
     severity_counts = {
-        item["_id"]: item["count"]
+        str(item["_id"]): item["count"]
         for item in logs_collection.aggregate(severity_pipeline)
+        if item["_id"] is not None
     }
     
-    # Event type counts
+    # Event type counts - filter out None values
     event_type_pipeline = [
-        {"$match": query},
+        {"$match": {**query, "event_type": {"$ne": None}}},
         {"$group": {"_id": "$event_type", "count": {"$sum": 1}}}
     ]
     event_type_counts = {
-        item["_id"]: item["count"]
+        str(item["_id"]): item["count"]
         for item in logs_collection.aggregate(event_type_pipeline)
+        if item["_id"] is not None
     }
     
-    # Protocol counts
+    # Protocol counts - filter out None values
     protocol_pipeline = [
         {"$match": {**query, "protocol": {"$ne": None}}},
         {"$group": {"_id": "$protocol", "count": {"$sum": 1}}}
     ]
     protocol_counts = {
-        item["_id"]: item["count"]
+        str(item["_id"]): item["count"]
         for item in logs_collection.aggregate(protocol_pipeline)
+        if item["_id"] is not None
     }
     
     # Logs by hour (last 24 hours if no date range specified)
@@ -206,9 +209,9 @@ def get_statistics(
     ]
     logs_by_hour = list(logs_collection.aggregate(hour_pipeline))
     
-    # Top source IPs with severity breakdown
+    # Top source IPs with severity breakdown - filter out None source_ip
     top_ips_pipeline = [
-        {"$match": query},
+        {"$match": {**query, "source_ip": {"$ne": None}}},
         {"$group": {
             "_id": "$source_ip",
             "count": {"$sum": 1}
@@ -266,7 +269,7 @@ def get_statistics(
 
 def get_top_ips(limit: int = 10, start_date: Optional[datetime] = None, end_date: Optional[datetime] = None):
     """Get top source IPs by log count"""
-    query = {}
+    query = {"source_ip": {"$ne": None}}
     if start_date or end_date:
         query["timestamp"] = {}
         if start_date:
