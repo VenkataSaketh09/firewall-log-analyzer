@@ -2,7 +2,23 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.db.mongo import logs_collection
 from app.routes.logs import router as logs_router
+from app.routes.threats import router as threats_router
+from app.routes.reports import router as reports_router
+from app.routes.ip_reputation import router as ip_reputation_router
+from app.routes.dashboard import router as dashboard_router
+from app.middleware.rate_limit import RateLimitMiddleware
+from app.config import validate_environment
+from app.services.retention_service import start_log_retention_worker
 from datetime import datetime
+import sys
+
+# Validate environment on startup
+try:
+    validate_environment()
+    print("✓ Environment variables validated")
+except ValueError as e:
+    print(f"✗ ERROR: {e}", file=sys.stderr)
+    sys.exit(1)
 
 app = FastAPI(
     title="Firewall Log Analyzer Backend",
@@ -19,8 +35,24 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Rate limiting middleware
+app.add_middleware(RateLimitMiddleware)
+
 # Include routers
 app.include_router(logs_router)
+app.include_router(threats_router)
+app.include_router(reports_router)
+app.include_router(ip_reputation_router)
+app.include_router(dashboard_router)
+
+
+@app.on_event("startup")
+async def startup_event():
+    """Initialize services on startup"""
+    # Start log retention worker
+    start_log_retention_worker()
+    print("✓ Log retention worker started")
+    print("✓ FastAPI application started successfully")
 
 
 @app.get("/health")
