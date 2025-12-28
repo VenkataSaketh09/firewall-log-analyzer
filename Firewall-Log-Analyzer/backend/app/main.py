@@ -3,6 +3,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.db.mongo import logs_collection
 from app.routes.logs import router as logs_router
 from app.routes.threats import router as threats_router
+from app.routes.reports import router as reports_router
+from app.routes.ip_reputation import router as ip_reputation_router
+from app.routes.dashboard import router as dashboard_router
 from datetime import datetime
 
 app = FastAPI(
@@ -23,6 +26,9 @@ app.add_middleware(
 # Include routers
 app.include_router(logs_router)
 app.include_router(threats_router)
+app.include_router(reports_router)
+app.include_router(ip_reputation_router)
+app.include_router(dashboard_router)
 
 
 @app.get("/health")

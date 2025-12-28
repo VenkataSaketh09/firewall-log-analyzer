@@ -1,6 +1,23 @@
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Dict, Any
 from pydantic import BaseModel, Field
+
+
+class VirusTotalReputation(BaseModel):
+    """VirusTotal IP reputation data"""
+    detected: bool = False
+    reputation_score: int = Field(0, ge=0, le=100, description="Reputation score 0-100 (higher = more malicious)")
+    threat_level: str = Field("UNKNOWN", description="CRITICAL, HIGH, MEDIUM, LOW, CLEAN, UNKNOWN")
+    malicious_count: int = 0
+    suspicious_count: int = 0
+    total_engines: int = 0
+    last_analysis_date: Optional[str] = None
+    country: Optional[str] = None
+    asn: Optional[int] = None
+    as_owner: Optional[str] = None
+    categories: list[str] = Field(default_factory=list)
+    detection_names: list[str] = Field(default_factory=list)
+    virustotal_url: Optional[str] = None
 
 
 class LogResponse(BaseModel):
@@ -15,6 +32,7 @@ class LogResponse(BaseModel):
     severity: str
     username: Optional[str] = None
     raw_log: str
+    virustotal: Optional[VirusTotalReputation] = None
 
     class Config:
         populate_by_name = True
@@ -48,6 +66,7 @@ class TopIPResponse(BaseModel):
     source_ip: str
     count: int
     severity_breakdown: dict[str, int]  # {"HIGH": 10, "MEDIUM": 5, "LOW": 2}
+    virustotal: Optional[VirusTotalReputation] = None
 
 
 class TopPortResponse(BaseModel):
