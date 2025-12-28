@@ -7,6 +7,7 @@ class ThreatSummary(BaseModel):
     """Model for threat summary statistics"""
     total_brute_force_attacks: int
     total_ddos_attacks: int
+    total_port_scan_attacks: int = 0
     total_threats: int
     critical_threats: int
     high_threats: int
@@ -44,10 +45,21 @@ class DDoSAttackSummary(BaseModel):
     last_request: Optional[str] = None
 
 
+class PortScanAttackSummary(BaseModel):
+    """Summary of port scan for reports"""
+    source_ip: str
+    total_attempts: int
+    unique_ports_attempted: int
+    severity: str
+    first_attempt: Optional[str] = None
+    last_attempt: Optional[str] = None
+
+
 class ThreatDetections(BaseModel):
     """Model for threat detections in reports"""
     brute_force_attacks: List[BruteForceAttackSummary]
     ddos_attacks: List[DDoSAttackSummary]
+    port_scan_attacks: List[PortScanAttackSummary] = Field(default_factory=list)
 
 
 class ThreatSourceSummary(BaseModel):

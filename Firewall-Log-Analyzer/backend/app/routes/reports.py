@@ -3,7 +3,7 @@ from typing import Optional
 from fastapi import APIRouter, Query, HTTPException, Body
 from fastapi.responses import Response
 from app.services.report_service import generate_daily_report, generate_weekly_report, generate_custom_report
-from app.services.export_service import export_to_json, export_to_csv, export_to_pdf_ready
+from app.services.export_service import export_to_json, export_to_csv, export_to_pdf_ready, export_to_pdf
 from app.schemas.report_schema import (
     DailyReportResponse,
     WeeklyReportResponse,
@@ -158,7 +158,7 @@ def export_report(
     Supports exporting daily, weekly, or custom reports in the following formats:
     - JSON: Full structured JSON data
     - CSV: Tabular CSV format suitable for spreadsheet applications
-    - PDF: PDF-ready structured data (can be used by frontend or external PDF generation service)
+    - PDF: Backend-generated PDF file download
     """
     try:
         # Generate report based on type
@@ -249,10 +249,17 @@ def export_report(
             filename = f"security_report_{export_request.report_type.lower()}_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.csv"
         
         elif format_lower == "pdf":
-            pdf_data = export_to_pdf_ready(report_data)
-            content = export_to_json(pdf_data)  # Return as JSON for PDF generation
-            content_type = "application/json"
-            filename = f"security_report_{export_request.report_type.lower()}_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.pdf.json"
+            pdf_bytes = export_to_pdf(report_data)
+            return Response(
+                content=pdf_bytes,
+                media_type="application/pdf",
+                headers={
+                    "Content-Disposition": (
+                        f"attachment; filename=security_report_{export_request.report_type.lower()}_"
+                        f"{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.pdf"
+                    )
+                }
+            )
         
         else:
             raise HTTPException(
