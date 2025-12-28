@@ -10,6 +10,7 @@ from app.schemas.dashboard_schema import (
 )
 from app.services.brute_force_detection import detect_brute_force
 from app.services.ddos_detection import detect_ddos
+from app.services.port_scan_detection import detect_port_scan
 from app.services.log_queries import get_top_ips
 from app.db.mongo import logs_collection, client
 
@@ -48,6 +49,15 @@ def get_dashboard_summary():
             single_ip_threshold=100,
             distributed_ip_count=10,
             distributed_request_threshold=500,
+            start_date=start_date,
+            end_date=end_date
+        )
+
+        # Get port scan detections from last 24 hours
+        port_scan_detections = detect_port_scan(
+            time_window_minutes=10,
+            unique_ports_threshold=10,
+            min_total_attempts=20,
             start_date=start_date,
             end_date=end_date
         )
@@ -91,19 +101,37 @@ def get_dashboard_summary():
                     )
                 )
         
+        # Convert port scan detections to alerts (limit to top 5 by severity)
+        for detection in port_scan_detections[:5]:
+            severity = detection.get("severity", "LOW")
+            if severity in ["CRITICAL", "HIGH"]:
+                unique_ports = detection.get("unique_ports_attempted", 0)
+                active_alerts.append(
+                    ActiveAlert(
+                        type="PORT_SCAN",
+                        source_ip=detection.get("source_ip", "Unknown"),
+                        severity=severity,
+                        detected_at=detection.get("last_attempt", end_date),
+                        description=f"Port scan detected: {unique_ports} unique ports attempted",
+                        threat_count=detection.get("total_attempts", 0)
+                    )
+                )
+
         # Sort alerts by severity (CRITICAL > HIGH) and then by detected_at (most recent first)
         severity_order = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3}
         active_alerts.sort(key=lambda x: (severity_order.get(x.severity, 99), -x.detected_at.timestamp()))
         active_alerts = active_alerts[:10]  # Limit to top 10 alerts
         
         # 2. Calculate threat summary
+        all_threats = brute_force_detections + ddos_detections + port_scan_detections
         threat_summary = ThreatSummary(
             total_brute_force=len(brute_force_detections),
             total_ddos=len(ddos_detections),
-            critical_count=sum(1 for d in brute_force_detections + ddos_detections if d.get("severity") == "CRITICAL"),
-            high_count=sum(1 for d in brute_force_detections + ddos_detections if d.get("severity") == "HIGH"),
-            medium_count=sum(1 for d in brute_force_detections + ddos_detections if d.get("severity") == "MEDIUM"),
-            low_count=sum(1 for d in brute_force_detections + ddos_detections if d.get("severity") == "LOW")
+            total_port_scan=len(port_scan_detections),
+            critical_count=sum(1 for d in all_threats if d.get("severity") == "CRITICAL"),
+            high_count=sum(1 for d in all_threats if d.get("severity") == "HIGH"),
+            medium_count=sum(1 for d in all_threats if d.get("severity") == "MEDIUM"),
+            low_count=sum(1 for d in all_threats if d.get("severity") == "LOW")
         )
         
         # 3. Get top IPs (last 24 hours)

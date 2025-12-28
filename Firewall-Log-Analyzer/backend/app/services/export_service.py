@@ -3,6 +3,12 @@ import csv
 import io
 import json
 from datetime import datetime
+from io import BytesIO
+
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import LETTER
+from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
 
 
 def export_to_json(report_data: Dict[str, Any]) -> str:
@@ -138,6 +144,22 @@ def export_to_csv(report_data: Dict[str, Any]) -> str:
             attack.get("last_request", "")
         ])
     writer.writerow([])
+
+    # Port Scan Attacks (optional)
+    port_scans = threat_detections.get("port_scan_attacks", [])
+    if port_scans:
+        writer.writerow(["PORT SCAN ATTACKS"])
+        writer.writerow(["Source IP", "Total Attempts", "Unique Ports", "Severity", "First Attempt", "Last Attempt"])
+        for attack in port_scans:
+            writer.writerow([
+                attack.get("source_ip", ""),
+                attack.get("total_attempts", 0),
+                attack.get("unique_ports_attempted", 0),
+                attack.get("severity", ""),
+                attack.get("first_attempt", ""),
+                attack.get("last_attempt", "")
+            ])
+        writer.writerow([])
     
     # Top Threat Sources
     writer.writerow(["TOP THREAT SOURCES"])
@@ -253,4 +275,169 @@ def export_to_pdf_ready(report_data: Dict[str, Any]) -> Dict[str, Any]:
             }
         ]
     }
+
+
+def export_to_pdf(report_data: Dict[str, Any]) -> bytes:
+    """
+    Export report data as a real PDF (bytes) for backend-generated PDF download.
+    """
+    buf = BytesIO()
+    doc = SimpleDocTemplate(
+        buf,
+        pagesize=LETTER,
+        title="Firewall Security Report"
+    )
+    styles = getSampleStyleSheet()
+    story = []
+
+    report_type = report_data.get("report_type", "UNKNOWN")
+    period = report_data.get("period", {})
+    summary = report_data.get("summary", {})
+    log_stats = report_data.get("log_statistics", {})
+    threat_detections = report_data.get("threat_detections", {})
+
+    story.append(Paragraph("Firewall Security Report", styles["Title"]))
+    story.append(Paragraph(f"Report Type: <b>{report_type}</b>", styles["Normal"]))
+    story.append(Paragraph(f"Period: {period.get('start', '')} to {period.get('end', '')}", styles["Normal"]))
+    story.append(Spacer(1, 12))
+
+    # Summary block
+    story.append(Paragraph("Summary", styles["Heading2"]))
+    threat_summary = summary.get("threat_summary", {})
+    summary_rows = [
+        ["Total Logs", str(summary.get("total_logs", 0))],
+        ["Security Score", str(summary.get("security_score", 0))],
+        ["Security Status", str(summary.get("security_status", "UNKNOWN"))],
+        ["Total Threats", str(threat_summary.get("total_threats", 0))],
+        ["Critical Threats", str(threat_summary.get("critical_threats", 0))],
+        ["High Threats", str(threat_summary.get("high_threats", 0))],
+        ["Medium Threats", str(threat_summary.get("medium_threats", 0))],
+        ["Low Threats", str(threat_summary.get("low_threats", 0))],
+    ]
+    t = Table(summary_rows, colWidths=[180, 340])
+    t.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.whitesmoke),
+        ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("FONTNAME", (0, 0), (-1, -1), "Helvetica"),
+    ]))
+    story.append(t)
+    story.append(Spacer(1, 14))
+
+    # Top IPs
+    story.append(Paragraph("Top Source IPs", styles["Heading2"]))
+    top_ips = log_stats.get("top_source_ips", []) or []
+    ip_table_data = [["IP Address", "Total", "HIGH", "MEDIUM", "LOW"]]
+    for ip_info in top_ips[:10]:
+        sev = ip_info.get("severity_breakdown", {}) or {}
+        ip_table_data.append([
+            str(ip_info.get("source_ip", "")),
+            str(ip_info.get("count", 0)),
+            str(sev.get("HIGH", 0)),
+            str(sev.get("MEDIUM", 0)),
+            str(sev.get("LOW", 0)),
+        ])
+    ip_table = Table(ip_table_data, colWidths=[170, 70, 70, 70, 70])
+    ip_table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.lightgrey),
+        ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+    ]))
+    story.append(ip_table)
+    story.append(Spacer(1, 14))
+
+    # Top Ports
+    story.append(Paragraph("Top Ports", styles["Heading2"]))
+    top_ports = log_stats.get("top_ports", []) or []
+    port_table_data = [["Port", "Count", "Protocol"]]
+    for p in top_ports[:10]:
+        port_table_data.append([
+            str(p.get("port", "")),
+            str(p.get("count", 0)),
+            str(p.get("protocol", "") or ""),
+        ])
+    port_table = Table(port_table_data, colWidths=[100, 100, 360])
+    port_table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.lightgrey),
+        ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+    ]))
+    story.append(port_table)
+    story.append(Spacer(1, 14))
+
+    # Brute force
+    story.append(Paragraph("Threat Detections - Brute Force", styles["Heading2"]))
+    bf = threat_detections.get("brute_force_attacks", []) or []
+    bf_table_data = [["Source IP", "Attempts", "Severity", "First", "Last"]]
+    for a in bf[:20]:
+        bf_table_data.append([
+            str(a.get("source_ip", "")),
+            str(a.get("total_attempts", 0)),
+            str(a.get("severity", "")),
+            str(a.get("first_attempt", "") or ""),
+            str(a.get("last_attempt", "") or ""),
+        ])
+    bf_table = Table(bf_table_data, colWidths=[120, 60, 70, 135, 135])
+    bf_table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.lightgrey),
+        ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+    ]))
+    story.append(bf_table)
+    story.append(Spacer(1, 14))
+
+    # DDoS
+    story.append(Paragraph("Threat Detections - DDoS", styles["Heading2"]))
+    dd = threat_detections.get("ddos_attacks", []) or []
+    dd_table_data = [["Type", "IPs", "Requests", "Peak Rate", "Target Port", "Severity"]]
+    for a in dd[:20]:
+        dd_table_data.append([
+            str(a.get("attack_type", "")),
+            str(a.get("source_ip_count", 0)),
+            str(a.get("total_requests", 0)),
+            str(a.get("peak_request_rate", 0)),
+            str(a.get("target_port", "") or ""),
+            str(a.get("severity", "")),
+        ])
+    dd_table = Table(dd_table_data, colWidths=[140, 50, 70, 80, 90, 80])
+    dd_table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.lightgrey),
+        ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+    ]))
+    story.append(dd_table)
+    story.append(Spacer(1, 14))
+
+    # Port Scan (optional)
+    ps = threat_detections.get("port_scan_attacks", []) or []
+    if ps:
+        story.append(Paragraph("Threat Detections - Port Scans", styles["Heading2"]))
+        ps_table_data = [["Source IP", "Attempts", "Unique Ports", "Severity", "First", "Last"]]
+        for a in ps[:20]:
+            ps_table_data.append([
+                str(a.get("source_ip", "")),
+                str(a.get("total_attempts", 0)),
+                str(a.get("unique_ports_attempted", 0)),
+                str(a.get("severity", "")),
+                str(a.get("first_attempt", "") or ""),
+                str(a.get("last_attempt", "") or ""),
+            ])
+        ps_table = Table(ps_table_data, colWidths=[120, 60, 75, 70, 95, 100])
+        ps_table.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), colors.lightgrey),
+            ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ]))
+        story.append(ps_table)
+        story.append(Spacer(1, 14))
+
+    # Recommendations
+    story.append(Paragraph("Recommendations", styles["Heading2"]))
+    recs = report_data.get("recommendations", []) or []
+    for r in recs[:20]:
+        story.append(Paragraph(f"- {str(r)}", styles["Normal"]))
+    story.append(Spacer(1, 8))
+
+    doc.build(story)
+    return buf.getvalue()
 

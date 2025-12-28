@@ -17,6 +17,7 @@ class ThreatSummary(BaseModel):
     """Summary of threats"""
     total_brute_force: int = Field(0, description="Total brute force detections in last 24 hours")
     total_ddos: int = Field(0, description="Total DDoS detections in last 24 hours")
+    total_port_scan: int = Field(0, description="Total port scan detections in last 24 hours")
     critical_count: int = Field(0, description="Number of CRITICAL severity threats")
     high_count: int = Field(0, description="Number of HIGH severity threats")
     medium_count: int = Field(0, description="Number of MEDIUM severity threats")

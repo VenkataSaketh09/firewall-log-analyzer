@@ -3,6 +3,7 @@ from typing import Optional, Dict, List
 from app.services.log_queries import get_statistics
 from app.services.brute_force_detection import detect_brute_force
 from app.services.ddos_detection import detect_ddos
+from app.services.port_scan_detection import detect_port_scan
 from app.services.virustotal_service import get_multiple_ip_reputations
 
 
@@ -83,12 +84,22 @@ def _generate_report(start_date: datetime, end_date: datetime, report_type: str)
         start_date=start_date,
         end_date=end_date
     )
+
+    # Get port scan detections
+    port_scan_detections = detect_port_scan(
+        time_window_minutes=10,
+        unique_ports_threshold=10,
+        min_total_attempts=20,
+        start_date=start_date,
+        end_date=end_date
+    )
     
     # Calculate threat summary
     threat_summary = {
         "total_brute_force_attacks": len(brute_force_detections),
         "total_ddos_attacks": len(ddos_detections),
-        "total_threats": len(brute_force_detections) + len(ddos_detections),
+        "total_port_scan_attacks": len(port_scan_detections),
+        "total_threats": len(brute_force_detections) + len(ddos_detections) + len(port_scan_detections),
         "critical_threats": 0,
         "high_threats": 0,
         "medium_threats": 0,
@@ -108,6 +119,17 @@ def _generate_report(start_date: datetime, end_date: datetime, report_type: str)
             threat_summary["low_threats"] += 1
     
     for detection in ddos_detections:
+        severity = detection.get("severity", "LOW")
+        if severity == "CRITICAL":
+            threat_summary["critical_threats"] += 1
+        elif severity == "HIGH":
+            threat_summary["high_threats"] += 1
+        elif severity == "MEDIUM":
+            threat_summary["medium_threats"] += 1
+        else:
+            threat_summary["low_threats"] += 1
+
+    for detection in port_scan_detections:
         severity = detection.get("severity", "LOW")
         if severity == "CRITICAL":
             threat_summary["critical_threats"] += 1
@@ -154,6 +176,24 @@ def _generate_report(start_date: datetime, end_date: datetime, report_type: str)
             threat_sources[ip]["ddos_attacks"] += 1
             threat_sources[ip]["total_attempts"] += detection.get("total_requests", 0)
             # Update severity to highest
+            current_sev = threat_sources[ip]["severity"]
+            det_sev = detection.get("severity", "LOW")
+            if _severity_level(det_sev) > _severity_level(current_sev):
+                threat_sources[ip]["severity"] = det_sev
+
+    for detection in port_scan_detections:
+        ip = detection.get("source_ip")
+        if ip:
+            if ip not in threat_sources:
+                threat_sources[ip] = {
+                    "ip": ip,
+                    "brute_force_attacks": 0,
+                    "ddos_attacks": 0,
+                    "total_attempts": 0,
+                    "severity": "LOW"
+                }
+            # treat port scan as "attempts" signal
+            threat_sources[ip]["total_attempts"] += detection.get("total_attempts", 0)
             current_sev = threat_sources[ip]["severity"]
             det_sev = detection.get("severity", "LOW")
             if _severity_level(det_sev) > _severity_level(current_sev):
@@ -236,6 +276,17 @@ def _generate_report(start_date: datetime, end_date: datetime, report_type: str)
                     "last_request": d.get("last_request").isoformat() if d.get("last_request") else None
                 }
                 for d in ddos_detections
+            ],
+            "port_scan_attacks": [
+                {
+                    "source_ip": d.get("source_ip"),
+                    "total_attempts": d.get("total_attempts", 0),
+                    "unique_ports_attempted": d.get("unique_ports_attempted", 0),
+                    "severity": d.get("severity", "LOW"),
+                    "first_attempt": d.get("first_attempt").isoformat() if d.get("first_attempt") else None,
+                    "last_attempt": d.get("last_attempt").isoformat() if d.get("last_attempt") else None
+                }
+                for d in port_scan_detections
             ]
         },
         "top_threat_sources": top_threat_sources,
