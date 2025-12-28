@@ -3,6 +3,8 @@ from typing import Optional
 from fastapi import APIRouter, Query, HTTPException, Body
 from app.services.brute_force_detection import detect_brute_force, get_brute_force_timeline
 from app.services.ddos_detection import detect_ddos
+from app.services.port_scan_detection import detect_port_scan
+from app.services.virustotal_service import get_multiple_ip_reputations, enhance_severity_with_reputation
 from app.schemas.threat_schema import (
     BruteForceDetectionsResponse,
     BruteForceDetection,
@@ -11,8 +13,13 @@ from app.schemas.threat_schema import (
     BruteForceConfig,
     DDoSDetectionsResponse,
     DDoSDetection,
-    DDoSAttackWindow
+    DDoSAttackWindow,
+    PortScanDetectionsResponse,
+    PortScanDetection,
+    PortScanAttackWindow,
+    PortScanConfig
 )
+from app.schemas.log_schema import VirusTotalReputation
 
 router = APIRouter(prefix="/api/threats", tags=["threats"])
 
@@ -23,7 +30,8 @@ def get_brute_force_detections(
     threshold: int = Query(5, ge=1, le=1000, description="Number of failed attempts to trigger detection"),
     start_date: Optional[datetime] = Query(None, description="Start date for analysis (ISO format)"),
     end_date: Optional[datetime] = Query(None, description="End date for analysis (ISO format)"),
-    source_ip: Optional[str] = Query(None, description="Optional specific IP to check")
+    source_ip: Optional[str] = Query(None, description="Optional specific IP to check"),
+    include_reputation: bool = Query(False, description="Include VirusTotal IP reputation data")
 ):
     """
     Detect brute force attacks based on failed login attempts.
@@ -43,6 +51,13 @@ def get_brute_force_detections(
             source_ip=source_ip
         )
         
+        # Get reputation data for all detected IPs if requested
+        reputation_data = {}
+        if include_reputation:
+            unique_ips = [detection.get("source_ip") for detection in detections if detection.get("source_ip")]
+            if unique_ips:
+                reputation_data = get_multiple_ip_reputations(unique_ips)
+        
         # Convert to response models
         detection_models = []
         for detection in detections:
@@ -56,16 +71,29 @@ def get_brute_force_detections(
                 for win in detection["attack_windows"]
             ]
             
+            # Get reputation for this IP
+            ip_reputation = None
+            detected_ip = detection.get("source_ip")
+            severity = detection.get("severity", "LOW")
+            
+            if include_reputation and detected_ip and detected_ip in reputation_data:
+                rep_data = reputation_data[detected_ip]
+                if rep_data:
+                    ip_reputation = VirusTotalReputation(**rep_data)
+                    # Enhance severity based on reputation
+                    severity = enhance_severity_with_reputation(severity, rep_data)
+            
             detection_models.append(
                 BruteForceDetection(
-                    source_ip=detection["source_ip"],
+                    source_ip=detected_ip,
                     total_attempts=detection["total_attempts"],
                     unique_usernames_attempted=detection["unique_usernames_attempted"],
                     usernames_attempted=detection["usernames_attempted"],
                     first_attempt=detection["first_attempt"],
                     last_attempt=detection["last_attempt"],
                     attack_windows=attack_windows,
-                    severity=detection["severity"]
+                    severity=severity,
+                    virustotal=ip_reputation
                 )
             )
         
@@ -91,7 +119,8 @@ def get_brute_force_detections(
 
 @router.post("/brute-force", response_model=BruteForceDetectionsResponse)
 def detect_brute_force_post(
-    config: BruteForceConfig = Body(..., description="Brute force detection configuration")
+    config: BruteForceConfig = Body(..., description="Brute force detection configuration"),
+    include_reputation: bool = Query(False, description="Include VirusTotal IP reputation data")
 ):
     """
     Detect brute force attacks using POST method with configuration in request body.
@@ -107,6 +136,13 @@ def detect_brute_force_post(
             source_ip=config.source_ip
         )
         
+        # Get reputation data for all detected IPs if requested
+        reputation_data = {}
+        if include_reputation:
+            unique_ips = [detection.get("source_ip") for detection in detections if detection.get("source_ip")]
+            if unique_ips:
+                reputation_data = get_multiple_ip_reputations(unique_ips)
+        
         # Convert to response models
         detection_models = []
         for detection in detections:
@@ -120,16 +156,29 @@ def detect_brute_force_post(
                 for win in detection["attack_windows"]
             ]
             
+            # Get reputation for this IP
+            ip_reputation = None
+            detected_ip = detection.get("source_ip")
+            severity = detection.get("severity", "LOW")
+            
+            if include_reputation and detected_ip and detected_ip in reputation_data:
+                rep_data = reputation_data[detected_ip]
+                if rep_data:
+                    ip_reputation = VirusTotalReputation(**rep_data)
+                    # Enhance severity based on reputation
+                    severity = enhance_severity_with_reputation(severity, rep_data)
+            
             detection_models.append(
                 BruteForceDetection(
-                    source_ip=detection["source_ip"],
+                    source_ip=detected_ip,
                     total_attempts=detection["total_attempts"],
                     unique_usernames_attempted=detection["unique_usernames_attempted"],
                     usernames_attempted=detection["usernames_attempted"],
                     first_attempt=detection["first_attempt"],
                     last_attempt=detection["last_attempt"],
                     attack_windows=attack_windows,
-                    severity=detection["severity"]
+                    severity=severity,
+                    virustotal=ip_reputation
                 )
             )
         
@@ -191,7 +240,8 @@ def get_ddos_detections(
     start_date: Optional[datetime] = Query(None, description="Start date for analysis (ISO format)"),
     end_date: Optional[datetime] = Query(None, description="End date for analysis (ISO format)"),
     destination_port: Optional[int] = Query(None, description="Optional destination port to filter by"),
-    protocol: Optional[str] = Query(None, description="Optional protocol to filter by (TCP, UDP, etc.)")
+    protocol: Optional[str] = Query(None, description="Optional protocol to filter by (TCP, UDP, etc.)"),
+    include_reputation: bool = Query(False, description="Include VirusTotal IP reputation data")
 ):
     """
     Detect DDoS/Flood attacks based on traffic patterns.
@@ -221,6 +271,18 @@ def get_ddos_detections(
             destination_port=destination_port,
             protocol=protocol
         )
+        
+        # Get reputation data for all detected IPs if requested
+        reputation_data = {}
+        if include_reputation:
+            all_source_ips = []
+            for detection in detections:
+                source_ips = detection.get("source_ips", [])
+                all_source_ips.extend(source_ips)
+            
+            if all_source_ips:
+                unique_ips = list(set(all_source_ips))
+                reputation_data = get_multiple_ip_reputations(unique_ips)
         
         # Convert to response models
         detection_models = []
@@ -256,7 +318,12 @@ def get_ddos_detections(
                     last_request=detection["last_request"],
                     attack_windows=attack_windows,
                     top_attacking_ips=detection.get("top_attacking_ips"),
-                    severity=detection["severity"]
+                    severity=detection["severity"],
+                    source_ip_reputations={
+                        ip: VirusTotalReputation(**rep_data)
+                        for ip, rep_data in reputation_data.items()
+                        if ip in detection.get("source_ips", []) and rep_data
+                    } if include_reputation and reputation_data else None
                 )
             )
         
@@ -280,4 +347,112 @@ def get_ddos_detections(
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error detecting DDoS/flood attacks: {str(e)}")
+
+
+@router.get("/port-scan", response_model=PortScanDetectionsResponse)
+def get_port_scan_detections(
+    time_window_minutes: int = Query(10, ge=1, le=1440, description="Sliding window size in minutes"),
+    unique_ports_threshold: int = Query(10, ge=2, le=65535, description="Minimum unique ports in window to flag scan"),
+    min_total_attempts: int = Query(20, ge=1, le=1000000, description="Minimum total attempts from IP in period"),
+    start_date: Optional[datetime] = Query(None, description="Start date for analysis (ISO format)"),
+    end_date: Optional[datetime] = Query(None, description="End date for analysis (ISO format)"),
+    source_ip: Optional[str] = Query(None, description="Optional specific IP to check"),
+    protocol: Optional[str] = Query(None, description="Optional protocol filter (TCP/UDP)"),
+    include_reputation: bool = Query(False, description="Include VirusTotal IP reputation data")
+):
+    """
+    Detect port scanning based on a single source IP probing many destination ports
+    in a short time window.
+    """
+    try:
+        detections = detect_port_scan(
+            time_window_minutes=time_window_minutes,
+            unique_ports_threshold=unique_ports_threshold,
+            min_total_attempts=min_total_attempts,
+            start_date=start_date,
+            end_date=end_date,
+            source_ip=source_ip,
+            protocol=protocol
+        )
+
+        reputation_data = {}
+        if include_reputation:
+            unique_ips = [d.get("source_ip") for d in detections if d.get("source_ip")]
+            if unique_ips:
+                reputation_data = get_multiple_ip_reputations(unique_ips)
+
+        detection_models = []
+        for detection in detections:
+            detected_ip = detection.get("source_ip")
+            severity = detection.get("severity", "LOW")
+            ip_reputation = None
+
+            if include_reputation and detected_ip and detected_ip in reputation_data:
+                rep_data = reputation_data[detected_ip]
+                if rep_data:
+                    ip_reputation = VirusTotalReputation(**rep_data)
+                    severity = enhance_severity_with_reputation(severity, rep_data)
+
+            windows = [
+                PortScanAttackWindow(
+                    window_start=w["window_start"],
+                    window_end=w["window_end"],
+                    attempt_count=w["attempt_count"],
+                    unique_ports=w["unique_ports"],
+                    ports=w.get("ports", []),
+                    attempts=w.get("attempts", []),
+                )
+                for w in detection.get("attack_windows", [])
+            ]
+
+            detection_models.append(
+                PortScanDetection(
+                    source_ip=detected_ip,
+                    total_attempts=detection.get("total_attempts", 0),
+                    unique_ports_attempted=detection.get("unique_ports_attempted", 0),
+                    ports_attempted=detection.get("ports_attempted", []),
+                    first_attempt=detection.get("first_attempt"),
+                    last_attempt=detection.get("last_attempt"),
+                    attack_windows=windows,
+                    severity=severity,
+                    virustotal=ip_reputation
+                )
+            )
+
+        # Determine time range for response
+        if end_date is None:
+            end_date = datetime.utcnow()
+        if start_date is None:
+            start_date = end_date.replace(hour=0, minute=0, second=0, microsecond=0)
+
+        return PortScanDetectionsResponse(
+            detections=detection_models,
+            total_detections=len(detection_models),
+            time_window_minutes=time_window_minutes,
+            unique_ports_threshold=unique_ports_threshold,
+            min_total_attempts=min_total_attempts,
+            time_range={"start": start_date.isoformat(), "end": end_date.isoformat()}
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error detecting port scans: {str(e)}")
+
+
+@router.post("/port-scan", response_model=PortScanDetectionsResponse)
+def detect_port_scan_post(
+    config: PortScanConfig = Body(..., description="Port scan detection configuration"),
+    include_reputation: bool = Query(False, description="Include VirusTotal IP reputation data")
+):
+    """
+    Detect port scans using POST method with configuration in request body.
+    """
+    return get_port_scan_detections(
+        time_window_minutes=config.time_window_minutes,
+        unique_ports_threshold=config.unique_ports_threshold,
+        min_total_attempts=config.min_total_attempts,
+        start_date=config.start_date,
+        end_date=config.end_date,
+        source_ip=config.source_ip,
+        protocol=config.protocol,
+        include_reputation=include_reputation
+    )
 

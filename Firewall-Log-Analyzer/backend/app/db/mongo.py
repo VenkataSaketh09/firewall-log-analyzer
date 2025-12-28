@@ -9,6 +9,7 @@ MONGO_URI = os.getenv("MONGO_URI")
 client = MongoClient(MONGO_URI)
 db = client.firewall_analyzer
 logs_collection = db.firewall_logs
+ip_reputation_cache = db.ip_reputation_cache
 
 
 def create_indexes():

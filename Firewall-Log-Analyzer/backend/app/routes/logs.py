@@ -1,10 +1,77 @@
 from datetime import datetime
 from typing import Optional
-from fastapi import APIRouter, Query, HTTPException
+from fastapi import APIRouter, Query, HTTPException, Body, Security
 from app.services.log_queries import get_logs, get_log_by_id, get_statistics, get_top_ips, get_top_ports
-from app.schemas.log_schema import LogResponse, LogsResponse, StatsResponse, TopIPResponse, TopPortResponse
+from app.services.virustotal_service import get_multiple_ip_reputations, enhance_severity_with_reputation
+from app.services.log_parser_service import parse_multiple_logs
+from app.middleware.auth_middleware import verify_api_key
+from app.schemas.log_schema import LogResponse, LogsResponse, StatsResponse, TopIPResponse, TopPortResponse, VirusTotalReputation
+from app.schemas.ingestion_schema import LogIngestionRequest, LogIngestionResponse
+from app.db.mongo import logs_collection
 
 router = APIRouter(prefix="/api/logs", tags=["logs"])
+
+
+@router.post("/ingest", response_model=LogIngestionResponse)
+def ingest_logs_endpoint(
+    request: LogIngestionRequest = Body(...),
+    api_key: str = Security(verify_api_key)
+):
+    """
+    Ingest firewall logs from remote VMs or log sources.
+    
+    This endpoint accepts raw log lines and automatically parses them using
+    the appropriate parser (auth.log, ufw.log, iptables, syslog, sql.log).
+    
+    Requires API key authentication via X-API-Key header.
+    
+    Example:
+    ```json
+    {
+        "logs": [
+            "Jan  1 10:00:00 hostname sshd[12345]: Failed password for admin from 192.168.1.100",
+            "[UFW AUDIT] IN=eth0 OUT= SRC=192.168.1.1 DST=192.168.1.100 PROTO=TCP DPT=22"
+        ],
+        "log_source": "auth.log"
+    }
+    ```
+    """
+    try:
+        if not request.logs:
+            raise HTTPException(status_code=400, detail="Logs list cannot be empty")
+        
+        if len(request.logs) > 1000:
+            raise HTTPException(status_code=400, detail="Maximum 1000 log lines per request")
+        
+        # Parse logs
+        parsed_logs = parse_multiple_logs(request.logs, request.log_source)
+        
+        if not parsed_logs:
+            return LogIngestionResponse(
+                success=False,
+                ingested_count=0,
+                failed_count=len(request.logs),
+                total_received=len(request.logs),
+                message="No logs could be parsed from the provided lines"
+            )
+        
+        # Insert into database
+        if parsed_logs:
+            logs_collection.insert_many(parsed_logs)
+        
+        failed_count = len(request.logs) - len(parsed_logs)
+        
+        return LogIngestionResponse(
+            success=True,
+            ingested_count=len(parsed_logs),
+            failed_count=failed_count,
+            total_received=len(request.logs),
+            message=f"Successfully ingested {len(parsed_logs)} log(s). {failed_count} failed to parse."
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error ingesting logs: {str(e)}")
 
 
 @router.get("", response_model=LogsResponse)
@@ -21,7 +88,8 @@ def get_logs_endpoint(
     end_date: Optional[datetime] = Query(None, description="End date (ISO format)"),
     search: Optional[str] = Query(None, description="Search in source_ip, raw_log, or username"),
     sort_by: str = Query("timestamp", description="Field to sort by (timestamp, severity, source_ip, event_type)"),
-    sort_order: str = Query("desc", regex="^(asc|desc)$", description="Sort order (asc or desc)")
+    sort_order: str = Query("desc", regex="^(asc|desc)$", description="Sort order (asc or desc)"),
+    include_reputation: bool = Query(False, description="Include VirusTotal IP reputation data")
 ):
     """Get paginated logs with filtering and sorting"""
     try:
@@ -41,8 +109,30 @@ def get_logs_endpoint(
             sort_order=sort_order
         )
         
-        # Convert logs to LogResponse models
-        log_responses = [LogResponse(**log) for log in result["logs"]]
+        # Get unique IP addresses for reputation lookup
+        reputation_data = {}
+        if include_reputation:
+            unique_ips = list(set(log.get("source_ip") for log in result["logs"] if log.get("source_ip")))
+            reputation_data = get_multiple_ip_reputations(unique_ips)
+        
+        # Convert logs to LogResponse models with reputation
+        log_responses = []
+        for log in result["logs"]:
+            log_dict = dict(log)
+            
+            # Add reputation data if requested
+            if include_reputation:
+                ip = log_dict.get("source_ip")
+                if ip and ip in reputation_data:
+                    reputation = reputation_data[ip]
+                    log_dict["virustotal"] = reputation
+                    
+                    # Enhance severity based on reputation
+                    if reputation.get("detected"):
+                        original_severity = log_dict.get("severity", "LOW")
+                        log_dict["severity"] = enhance_severity_with_reputation(original_severity, reputation)
+            
+            log_responses.append(LogResponse(**log_dict))
         
         return LogsResponse(
             logs=log_responses,
@@ -56,12 +146,33 @@ def get_logs_endpoint(
 
 
 @router.get("/{log_id}", response_model=LogResponse)
-def get_log_endpoint(log_id: str):
+def get_log_endpoint(
+    log_id: str,
+    include_reputation: bool = Query(False, description="Include VirusTotal IP reputation data")
+):
     """Get a single log entry by ID"""
+    from app.services.virustotal_service import get_ip_reputation, enhance_severity_with_reputation
+    
     log = get_log_by_id(log_id)
     if not log:
         raise HTTPException(status_code=404, detail="Log not found")
-    return LogResponse(**log)
+    
+    log_dict = dict(log)
+    
+    # Add reputation data if requested
+    if include_reputation:
+        ip = log_dict.get("source_ip")
+        if ip:
+            reputation = get_ip_reputation(ip)
+            if reputation:
+                log_dict["virustotal"] = reputation
+                
+                # Enhance severity based on reputation
+                if reputation.get("detected"):
+                    original_severity = log_dict.get("severity", "LOW")
+                    log_dict["severity"] = enhance_severity_with_reputation(original_severity, reputation)
+    
+    return LogResponse(**log_dict)
 
 
 @router.get("/stats/summary", response_model=StatsResponse)
@@ -81,12 +192,30 @@ def get_stats_endpoint(
 def get_top_ips_endpoint(
     limit: int = Query(10, ge=1, le=100, description="Number of top IPs to return"),
     start_date: Optional[datetime] = Query(None, description="Start date (ISO format)"),
-    end_date: Optional[datetime] = Query(None, description="End date (ISO format)")
+    end_date: Optional[datetime] = Query(None, description="End date (ISO format)"),
+    include_reputation: bool = Query(False, description="Include VirusTotal IP reputation data")
 ):
     """Get top source IPs by log count"""
     try:
         top_ips = get_top_ips(limit=limit, start_date=start_date, end_date=end_date)
-        return [TopIPResponse(**ip) for ip in top_ips]
+        
+        # Get reputation data if requested
+        reputation_data = {}
+        if include_reputation:
+            unique_ips = [ip.get("source_ip") for ip in top_ips if ip.get("source_ip")]
+            reputation_data = get_multiple_ip_reputations(unique_ips)
+        
+        # Enhance IP responses with reputation
+        ip_responses = []
+        for ip in top_ips:
+            ip_dict = dict(ip)
+            if include_reputation:
+                ip_addr = ip_dict.get("source_ip")
+                if ip_addr and ip_addr in reputation_data:
+                    ip_dict["virustotal"] = reputation_data[ip_addr]
+            ip_responses.append(TopIPResponse(**ip_dict))
+        
+        return ip_responses
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error retrieving top IPs: {str(e)}")
 

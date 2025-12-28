@@ -1,6 +1,7 @@
 from datetime import datetime
 from typing import Optional, List
 from pydantic import BaseModel, Field
+from app.schemas.log_schema import VirusTotalReputation
 
 
 class AttackWindow(BaseModel):
@@ -21,6 +22,7 @@ class BruteForceDetection(BaseModel):
     last_attempt: datetime
     attack_windows: List[AttackWindow]
     severity: str  # CRITICAL, HIGH, MEDIUM, LOW
+    virustotal: Optional[VirusTotalReputation] = None
 
     class Config:
         json_encoders = {
@@ -89,6 +91,7 @@ class DDoSDetection(BaseModel):
     attack_windows: List[DDoSAttackWindow]
     top_attacking_ips: Optional[dict] = None  # For distributed attacks: {ip: request_count}
     severity: str  # CRITICAL, HIGH, MEDIUM, LOW
+    source_ip_reputations: Optional[dict[str, VirusTotalReputation]] = None  # Map of IP -> reputation
 
     class Config:
         json_encoders = {
@@ -105,4 +108,53 @@ class DDoSDetectionsResponse(BaseModel):
     distributed_ip_count: int
     distributed_request_threshold: int
     time_range: dict  # {"start": datetime, "end": datetime}
+
+
+class PortScanAttackWindow(BaseModel):
+    """Model for a port scan time window"""
+    window_start: datetime
+    window_end: datetime
+    attempt_count: int
+    unique_ports: int
+    ports: List[int]
+    attempts: List[dict]  # {timestamp, destination_port, protocol, log_id}
+
+
+class PortScanDetection(BaseModel):
+    """Response model for a port scan detection"""
+    source_ip: str
+    total_attempts: int
+    unique_ports_attempted: int
+    ports_attempted: List[int]
+    first_attempt: datetime
+    last_attempt: datetime
+    attack_windows: List[PortScanAttackWindow]
+    severity: str  # CRITICAL, HIGH, MEDIUM, LOW
+    virustotal: Optional[VirusTotalReputation] = None
+
+    class Config:
+        json_encoders = {
+            datetime: lambda v: v.isoformat()
+        }
+
+
+class PortScanDetectionsResponse(BaseModel):
+    """Response model for port scan detections list"""
+    detections: List[PortScanDetection]
+    total_detections: int
+    time_window_minutes: int
+    unique_ports_threshold: int
+    min_total_attempts: int
+    time_range: dict  # {"start": datetime, "end": datetime}
+
+
+class PortScanConfig(BaseModel):
+    """Request model for configuring port scan detection"""
+    time_window_minutes: int = Field(10, ge=1, le=1440, description="Sliding window size in minutes")
+    unique_ports_threshold: int = Field(10, ge=2, le=65535, description="Minimum unique destination ports in a window")
+    min_total_attempts: int = Field(20, ge=1, le=1000000, description="Minimum total attempts from IP in period")
+    start_date: Optional[datetime] = Field(None, description="Start date for analysis (ISO format)")
+    end_date: Optional[datetime] = Field(None, description="End date for analysis (ISO format)")
+    source_ip: Optional[str] = Field(None, description="Optional specific IP to check")
+    protocol: Optional[str] = Field(None, description="Optional protocol filter (TCP/UDP)")
 
