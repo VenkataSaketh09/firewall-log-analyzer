@@ -1,6 +1,7 @@
 import re
 from datetime import datetime
 from app.models.log_model import build_log
+from app.services.timestamp_parser import extract_timestamp
 
 FAILED_REGEX = re.compile(
     r"Failed password for (invalid user )?(?P<user>\w+) from (?P<ip>[\d.]+)"
@@ -11,7 +12,7 @@ SUCCESS_REGEX = re.compile(
 )
 
 def parse_auth_log(line: str):
-    timestamp = datetime.utcnow()
+    timestamp = extract_timestamp(line, "auth.log")
 
     if "Failed password" in line:
         match = FAILED_REGEX.search(line)

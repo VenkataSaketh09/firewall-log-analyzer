@@ -1,6 +1,7 @@
 import re
 from datetime import datetime
 from app.models.log_model import build_log
+from app.services.timestamp_parser import extract_timestamp
 
 # Example UFW log line:
 # [UFW AUDIT] IN=enp0s8 OUT= SRC=192.168.56.1 DST=192.168.56.101 PROTO=TCP SPT=50520 DPT=22
@@ -13,7 +14,7 @@ def parse_ufw_log(line: str):
     if "[UFW" not in line:
         return None
 
-    timestamp = datetime.utcnow()
+    timestamp = extract_timestamp(line, "ufw.log")
 
     src_match = SRC_REGEX.search(line)
     dpt_match = DPT_REGEX.search(line)

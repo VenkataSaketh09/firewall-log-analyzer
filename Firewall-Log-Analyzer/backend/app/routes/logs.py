@@ -1,11 +1,77 @@
 from datetime import datetime
 from typing import Optional
-from fastapi import APIRouter, Query, HTTPException
+from fastapi import APIRouter, Query, HTTPException, Body, Security
 from app.services.log_queries import get_logs, get_log_by_id, get_statistics, get_top_ips, get_top_ports
 from app.services.virustotal_service import get_multiple_ip_reputations, enhance_severity_with_reputation
+from app.services.log_parser_service import parse_multiple_logs
+from app.middleware.auth_middleware import verify_api_key
 from app.schemas.log_schema import LogResponse, LogsResponse, StatsResponse, TopIPResponse, TopPortResponse, VirusTotalReputation
+from app.schemas.ingestion_schema import LogIngestionRequest, LogIngestionResponse
+from app.db.mongo import logs_collection
 
 router = APIRouter(prefix="/api/logs", tags=["logs"])
+
+
+@router.post("/ingest", response_model=LogIngestionResponse)
+def ingest_logs_endpoint(
+    request: LogIngestionRequest = Body(...),
+    api_key: str = Security(verify_api_key)
+):
+    """
+    Ingest firewall logs from remote VMs or log sources.
+    
+    This endpoint accepts raw log lines and automatically parses them using
+    the appropriate parser (auth.log, ufw.log, iptables, syslog, sql.log).
+    
+    Requires API key authentication via X-API-Key header.
+    
+    Example:
+    ```json
+    {
+        "logs": [
+            "Jan  1 10:00:00 hostname sshd[12345]: Failed password for admin from 192.168.1.100",
+            "[UFW AUDIT] IN=eth0 OUT= SRC=192.168.1.1 DST=192.168.1.100 PROTO=TCP DPT=22"
+        ],
+        "log_source": "auth.log"
+    }
+    ```
+    """
+    try:
+        if not request.logs:
+            raise HTTPException(status_code=400, detail="Logs list cannot be empty")
+        
+        if len(request.logs) > 1000:
+            raise HTTPException(status_code=400, detail="Maximum 1000 log lines per request")
+        
+        # Parse logs
+        parsed_logs = parse_multiple_logs(request.logs, request.log_source)
+        
+        if not parsed_logs:
+            return LogIngestionResponse(
+                success=False,
+                ingested_count=0,
+                failed_count=len(request.logs),
+                total_received=len(request.logs),
+                message="No logs could be parsed from the provided lines"
+            )
+        
+        # Insert into database
+        if parsed_logs:
+            logs_collection.insert_many(parsed_logs)
+        
+        failed_count = len(request.logs) - len(parsed_logs)
+        
+        return LogIngestionResponse(
+            success=True,
+            ingested_count=len(parsed_logs),
+            failed_count=failed_count,
+            total_received=len(request.logs),
+            message=f"Successfully ingested {len(parsed_logs)} log(s). {failed_count} failed to parse."
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error ingesting logs: {str(e)}")
 
 
 @router.get("", response_model=LogsResponse)
