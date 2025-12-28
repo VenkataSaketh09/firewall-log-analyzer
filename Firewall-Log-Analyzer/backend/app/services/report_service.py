@@ -3,6 +3,7 @@ from typing import Optional, Dict, List
 from app.services.log_queries import get_statistics
 from app.services.brute_force_detection import detect_brute_force
 from app.services.ddos_detection import detect_ddos
+from app.services.virustotal_service import get_multiple_ip_reputations
 
 
 def generate_daily_report(date: Optional[datetime] = None) -> Dict:
@@ -165,6 +166,9 @@ def _generate_report(start_date: datetime, end_date: datetime, report_type: str)
         reverse=True
     )[:20]
     
+    # Get VirusTotal reputation for top threat sources
+    malicious_ip_analysis = _analyze_malicious_ips(top_threat_sources)
+    
     # Calculate security score (0-100, higher is better)
     # Base score starts at 100, deduct points for threats
     security_score = 100
@@ -235,8 +239,9 @@ def _generate_report(start_date: datetime, end_date: datetime, report_type: str)
             ]
         },
         "top_threat_sources": top_threat_sources,
+        "malicious_ip_analysis": malicious_ip_analysis,
         "recommendations": _generate_recommendations(
-            threat_summary, brute_force_detections, ddos_detections, log_stats
+            threat_summary, brute_force_detections, ddos_detections, log_stats, malicious_ip_analysis
         )
     }
 
@@ -312,11 +317,65 @@ def _get_time_breakdown(start_date: datetime, end_date: datetime, report_type: s
     return list(logs_collection.aggregate(pipeline))
 
 
+def _analyze_malicious_ips(top_threat_sources: List[Dict]) -> Dict:
+    """Analyze top threat source IPs using VirusTotal reputation"""
+    if not top_threat_sources:
+        return {
+            "total_ips_checked": 0,
+            "malicious_ips": 0,
+            "suspicious_ips": 0,
+            "clean_ips": 0,
+            "unknown_ips": 0,
+            "malicious_ip_list": []
+        }
+    
+    # Get reputation for top threat source IPs (limit to top 20)
+    ip_addresses = [source["ip"] for source in top_threat_sources[:20] if source.get("ip")]
+    reputation_data = get_multiple_ip_reputations(ip_addresses)
+    
+    malicious_ips = []
+    suspicious_ips = []
+    clean_ips = []
+    unknown_ips = []
+    
+    for ip, rep in reputation_data.items():
+        if not rep or rep.get("error"):
+            unknown_ips.append(ip)
+            continue
+        
+        threat_level = rep.get("threat_level", "UNKNOWN")
+        detected = rep.get("detected", False)
+        
+        if threat_level in ["CRITICAL", "HIGH"] or detected:
+            malicious_ips.append({
+                "ip": ip,
+                "threat_level": threat_level,
+                "reputation_score": rep.get("reputation_score", 0),
+                "malicious_count": rep.get("malicious_count", 0),
+                "country": rep.get("country"),
+                "categories": rep.get("categories", [])
+            })
+        elif threat_level == "MEDIUM" or rep.get("suspicious_count", 0) > 0:
+            suspicious_ips.append(ip)
+        else:
+            clean_ips.append(ip)
+    
+    return {
+        "total_ips_checked": len(ip_addresses),
+        "malicious_ips": len(malicious_ips),
+        "suspicious_ips": len(suspicious_ips),
+        "clean_ips": len(clean_ips),
+        "unknown_ips": len(unknown_ips),
+        "malicious_ip_list": malicious_ips
+    }
+
+
 def _generate_recommendations(
     threat_summary: Dict,
     brute_force_detections: List[Dict],
     ddos_detections: List[Dict],
-    log_stats: Dict
+    log_stats: Dict,
+    malicious_ip_analysis: Optional[Dict] = None
 ) -> List[str]:
     """Generate security recommendations based on the report data"""
     recommendations = []
@@ -354,6 +413,23 @@ def _generate_recommendations(
             recommendations.append(
                 f"High traffic on port {port_info['port']} detected. "
                 "Ensure this port is properly secured and access is restricted."
+            )
+    
+    # Add recommendations based on malicious IP analysis
+    if malicious_ip_analysis:
+        malicious_count = malicious_ip_analysis.get("malicious_ips", 0)
+        if malicious_count > 0:
+            recommendations.append(
+                f"CRITICAL: {malicious_count} known malicious IP(s) detected in threat sources. "
+                "Immediately block these IPs in your firewall: " +
+                ", ".join([ip["ip"] for ip in malicious_ip_analysis.get("malicious_ip_list", [])[:5]])
+            )
+        
+        suspicious_count = malicious_ip_analysis.get("suspicious_ips", 0)
+        if suspicious_count > 0:
+            recommendations.append(
+                f"Warning: {suspicious_count} suspicious IP(s) detected. "
+                "Monitor these IPs closely and consider implementing additional security measures."
             )
     
     if not recommendations:

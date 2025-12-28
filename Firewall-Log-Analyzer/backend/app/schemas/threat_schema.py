@@ -1,6 +1,7 @@
 from datetime import datetime
 from typing import Optional, List
 from pydantic import BaseModel, Field
+from app.schemas.log_schema import VirusTotalReputation
 
 
 class AttackWindow(BaseModel):
@@ -21,6 +22,7 @@ class BruteForceDetection(BaseModel):
     last_attempt: datetime
     attack_windows: List[AttackWindow]
     severity: str  # CRITICAL, HIGH, MEDIUM, LOW
+    virustotal: Optional[VirusTotalReputation] = None
 
     class Config:
         json_encoders = {
@@ -89,6 +91,7 @@ class DDoSDetection(BaseModel):
     attack_windows: List[DDoSAttackWindow]
     top_attacking_ips: Optional[dict] = None  # For distributed attacks: {ip: request_count}
     severity: str  # CRITICAL, HIGH, MEDIUM, LOW
+    source_ip_reputations: Optional[dict[str, VirusTotalReputation]] = None  # Map of IP -> reputation
 
     class Config:
         json_encoders = {

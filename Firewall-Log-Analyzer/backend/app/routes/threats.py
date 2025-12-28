@@ -3,6 +3,7 @@ from typing import Optional
 from fastapi import APIRouter, Query, HTTPException, Body
 from app.services.brute_force_detection import detect_brute_force, get_brute_force_timeline
 from app.services.ddos_detection import detect_ddos
+from app.services.virustotal_service import get_multiple_ip_reputations, enhance_severity_with_reputation
 from app.schemas.threat_schema import (
     BruteForceDetectionsResponse,
     BruteForceDetection,
@@ -13,6 +14,7 @@ from app.schemas.threat_schema import (
     DDoSDetection,
     DDoSAttackWindow
 )
+from app.schemas.log_schema import VirusTotalReputation
 
 router = APIRouter(prefix="/api/threats", tags=["threats"])
 
@@ -23,7 +25,8 @@ def get_brute_force_detections(
     threshold: int = Query(5, ge=1, le=1000, description="Number of failed attempts to trigger detection"),
     start_date: Optional[datetime] = Query(None, description="Start date for analysis (ISO format)"),
     end_date: Optional[datetime] = Query(None, description="End date for analysis (ISO format)"),
-    source_ip: Optional[str] = Query(None, description="Optional specific IP to check")
+    source_ip: Optional[str] = Query(None, description="Optional specific IP to check"),
+    include_reputation: bool = Query(False, description="Include VirusTotal IP reputation data")
 ):
     """
     Detect brute force attacks based on failed login attempts.
@@ -43,6 +46,13 @@ def get_brute_force_detections(
             source_ip=source_ip
         )
         
+        # Get reputation data for all detected IPs if requested
+        reputation_data = {}
+        if include_reputation:
+            unique_ips = [detection.get("source_ip") for detection in detections if detection.get("source_ip")]
+            if unique_ips:
+                reputation_data = get_multiple_ip_reputations(unique_ips)
+        
         # Convert to response models
         detection_models = []
         for detection in detections:
@@ -56,16 +66,29 @@ def get_brute_force_detections(
                 for win in detection["attack_windows"]
             ]
             
+            # Get reputation for this IP
+            ip_reputation = None
+            detected_ip = detection.get("source_ip")
+            severity = detection.get("severity", "LOW")
+            
+            if include_reputation and detected_ip and detected_ip in reputation_data:
+                rep_data = reputation_data[detected_ip]
+                if rep_data:
+                    ip_reputation = VirusTotalReputation(**rep_data)
+                    # Enhance severity based on reputation
+                    severity = enhance_severity_with_reputation(severity, rep_data)
+            
             detection_models.append(
                 BruteForceDetection(
-                    source_ip=detection["source_ip"],
+                    source_ip=detected_ip,
                     total_attempts=detection["total_attempts"],
                     unique_usernames_attempted=detection["unique_usernames_attempted"],
                     usernames_attempted=detection["usernames_attempted"],
                     first_attempt=detection["first_attempt"],
                     last_attempt=detection["last_attempt"],
                     attack_windows=attack_windows,
-                    severity=detection["severity"]
+                    severity=severity,
+                    virustotal=ip_reputation
                 )
             )
         
@@ -91,7 +114,8 @@ def get_brute_force_detections(
 
 @router.post("/brute-force", response_model=BruteForceDetectionsResponse)
 def detect_brute_force_post(
-    config: BruteForceConfig = Body(..., description="Brute force detection configuration")
+    config: BruteForceConfig = Body(..., description="Brute force detection configuration"),
+    include_reputation: bool = Query(False, description="Include VirusTotal IP reputation data")
 ):
     """
     Detect brute force attacks using POST method with configuration in request body.
@@ -107,6 +131,13 @@ def detect_brute_force_post(
             source_ip=config.source_ip
         )
         
+        # Get reputation data for all detected IPs if requested
+        reputation_data = {}
+        if include_reputation:
+            unique_ips = [detection.get("source_ip") for detection in detections if detection.get("source_ip")]
+            if unique_ips:
+                reputation_data = get_multiple_ip_reputations(unique_ips)
+        
         # Convert to response models
         detection_models = []
         for detection in detections:
@@ -120,16 +151,29 @@ def detect_brute_force_post(
                 for win in detection["attack_windows"]
             ]
             
+            # Get reputation for this IP
+            ip_reputation = None
+            detected_ip = detection.get("source_ip")
+            severity = detection.get("severity", "LOW")
+            
+            if include_reputation and detected_ip and detected_ip in reputation_data:
+                rep_data = reputation_data[detected_ip]
+                if rep_data:
+                    ip_reputation = VirusTotalReputation(**rep_data)
+                    # Enhance severity based on reputation
+                    severity = enhance_severity_with_reputation(severity, rep_data)
+            
             detection_models.append(
                 BruteForceDetection(
-                    source_ip=detection["source_ip"],
+                    source_ip=detected_ip,
                     total_attempts=detection["total_attempts"],
                     unique_usernames_attempted=detection["unique_usernames_attempted"],
                     usernames_attempted=detection["usernames_attempted"],
                     first_attempt=detection["first_attempt"],
                     last_attempt=detection["last_attempt"],
                     attack_windows=attack_windows,
-                    severity=detection["severity"]
+                    severity=severity,
+                    virustotal=ip_reputation
                 )
             )
         
@@ -191,7 +235,8 @@ def get_ddos_detections(
     start_date: Optional[datetime] = Query(None, description="Start date for analysis (ISO format)"),
     end_date: Optional[datetime] = Query(None, description="End date for analysis (ISO format)"),
     destination_port: Optional[int] = Query(None, description="Optional destination port to filter by"),
-    protocol: Optional[str] = Query(None, description="Optional protocol to filter by (TCP, UDP, etc.)")
+    protocol: Optional[str] = Query(None, description="Optional protocol to filter by (TCP, UDP, etc.)"),
+    include_reputation: bool = Query(False, description="Include VirusTotal IP reputation data")
 ):
     """
     Detect DDoS/Flood attacks based on traffic patterns.
@@ -221,6 +266,18 @@ def get_ddos_detections(
             destination_port=destination_port,
             protocol=protocol
         )
+        
+        # Get reputation data for all detected IPs if requested
+        reputation_data = {}
+        if include_reputation:
+            all_source_ips = []
+            for detection in detections:
+                source_ips = detection.get("source_ips", [])
+                all_source_ips.extend(source_ips)
+            
+            if all_source_ips:
+                unique_ips = list(set(all_source_ips))
+                reputation_data = get_multiple_ip_reputations(unique_ips)
         
         # Convert to response models
         detection_models = []
@@ -256,7 +313,12 @@ def get_ddos_detections(
                     last_request=detection["last_request"],
                     attack_windows=attack_windows,
                     top_attacking_ips=detection.get("top_attacking_ips"),
-                    severity=detection["severity"]
+                    severity=detection["severity"],
+                    source_ip_reputations={
+                        ip: VirusTotalReputation(**rep_data)
+                        for ip, rep_data in reputation_data.items()
+                        if ip in detection.get("source_ips", []) and rep_data
+                    } if include_reputation and reputation_data else None
                 )
             )
         
