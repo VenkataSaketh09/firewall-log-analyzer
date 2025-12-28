@@ -58,3 +58,51 @@ class BruteForceConfig(BaseModel):
     end_date: Optional[datetime] = Field(None, description="End date for analysis (ISO format)")
     source_ip: Optional[str] = Field(None, description="Optional specific IP to check")
 
+
+class DDoSAttackWindow(BaseModel):
+    """Model for a DDoS attack time window"""
+    window_start: datetime
+    window_end: datetime
+    request_count: int
+    request_rate_per_min: float
+    target_ports: Optional[dict] = None
+    protocols: Optional[dict] = None
+    unique_ip_count: Optional[int] = None  # For distributed attacks
+    top_attacking_ips: Optional[dict] = None  # For distributed attacks
+
+
+class DDoSDetection(BaseModel):
+    """Response model for a DDoS/flood detection"""
+    attack_type: str  # SINGLE_IP_FLOOD or DISTRIBUTED_FLOOD
+    source_ips: List[str]
+    source_ip_count: int
+    total_requests: int
+    peak_request_rate: float  # requests per minute
+    avg_request_rate: float  # requests per minute
+    target_ports: Optional[List[int]] = None  # For single IP attacks
+    target_protocols: Optional[List[str]] = None  # For single IP attacks
+    target_port: Optional[int] = None  # For distributed attacks
+    target_protocol: Optional[str] = None  # For distributed attacks
+    peak_unique_ips: Optional[int] = None  # For distributed attacks
+    first_request: datetime
+    last_request: datetime
+    attack_windows: List[DDoSAttackWindow]
+    top_attacking_ips: Optional[dict] = None  # For distributed attacks: {ip: request_count}
+    severity: str  # CRITICAL, HIGH, MEDIUM, LOW
+
+    class Config:
+        json_encoders = {
+            datetime: lambda v: v.isoformat()
+        }
+
+
+class DDoSDetectionsResponse(BaseModel):
+    """Response model for DDoS detections list"""
+    detections: List[DDoSDetection]
+    total_detections: int
+    time_window_seconds: int
+    single_ip_threshold: int
+    distributed_ip_count: int
+    distributed_request_threshold: int
+    time_range: dict  # {"start": datetime, "end": datetime}
+
