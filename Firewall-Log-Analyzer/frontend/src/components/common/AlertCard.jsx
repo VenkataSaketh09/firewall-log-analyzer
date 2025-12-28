@@ -1,6 +1,6 @@
 import React from 'react';
 import { SEVERITY_COLORS, SEVERITY_BG_COLORS } from '../../utils/constants';
-import { formatThreatType, formatTimestamp } from '../../utils/formatters';
+import { formatThreatType } from '../../utils/formatters';
 import { formatRelativeTime } from '../../utils/dateUtils';
 
 const AlertCard = ({ alert }) => {
