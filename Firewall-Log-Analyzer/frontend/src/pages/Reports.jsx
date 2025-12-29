@@ -44,7 +44,6 @@ const Reports = () => {
       setReport(null);
 
       let data;
-      const params = { ...config };
 
       switch (reportType) {
         case 'daily':

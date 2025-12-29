@@ -75,6 +75,7 @@ export const getIPReputation = async (ip) => {
  * Export threats as CSV
  */
 export const exportThreatsCSV = async (threatType, params = {}) => {
+  // threatType should match backend routes (e.g. "brute-force", "ddos", "port-scan")
   const endpoint = `/api/threats/${threatType}`;
   const response = await api.get(endpoint, {
     params: { ...params, format: 'csv' },
@@ -87,6 +88,7 @@ export const exportThreatsCSV = async (threatType, params = {}) => {
  * Export threats as JSON
  */
 export const exportThreatsJSON = async (threatType, params = {}) => {
+  // threatType should match backend routes (e.g. "brute-force", "ddos", "port-scan")
   const endpoint = `/api/threats/${threatType}`;
   const response = await api.get(endpoint, {
     params: { ...params, format: 'json' },

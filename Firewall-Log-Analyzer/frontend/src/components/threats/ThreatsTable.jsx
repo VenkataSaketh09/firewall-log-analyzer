@@ -71,7 +71,7 @@ const ThreatsTable = ({ threats, onViewDetails }) => {
                   {getSeverityBadge(threat.severity)}
                 </td>
                 <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
-                  {threat.attempt_count || 'N/A'}
+                  {threat.attempt_count ?? 'N/A'}
                 </td>
                 <td className="px-4 py-3 whitespace-nowrap text-sm">
                   <button

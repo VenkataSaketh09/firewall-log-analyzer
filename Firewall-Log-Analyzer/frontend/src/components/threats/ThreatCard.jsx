@@ -47,7 +47,7 @@ const ThreatCard = ({ threat, onViewDetails }) => {
           <span className="text-gray-400">•</span>
           <span className="text-xs">{formatTimestamp(threat.timestamp)}</span>
         </div>
-        {threat.attempt_count && (
+        {threat.attempt_count != null && (
           <div className="text-sm text-gray-600">
             <span className="font-medium">Attempts:</span> {threat.attempt_count}
           </div>

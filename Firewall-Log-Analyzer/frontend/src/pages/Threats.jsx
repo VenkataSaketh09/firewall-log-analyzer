@@ -34,6 +34,74 @@ const Threats = () => {
     { id: 'port-scan', label: 'Port Scan', endpoint: getPortScanThreats },
   ];
 
+  const normalizeThreats = (tabId, raw) => {
+    const detections = Array.isArray(raw) ? raw : raw?.detections || [];
+    const toIso = (v) => {
+      if (!v) return null;
+      // Backend returns ISO strings via Pydantic json_encoders; keep as-is.
+      // If it ever comes as Date, convert it.
+      return typeof v === 'string' ? v : new Date(v).toISOString();
+    };
+
+    if (tabId === 'brute-force') {
+      return detections.map((d) => {
+        const timestamp = toIso(d.last_attempt || d.first_attempt);
+        return {
+          id: d.id || `brute-force-${d.source_ip || 'unknown'}-${timestamp || 'na'}`,
+          timestamp,
+          threat_type: 'BRUTE_FORCE',
+          source_ip: d.source_ip,
+          severity: d.severity,
+          attempt_count: d.total_attempts ?? null,
+          description:
+            d.total_attempts != null
+              ? `Potential brute force attack: ${d.total_attempts} failed attempts`
+              : 'Potential brute force attack',
+          additional_info: d,
+        };
+      });
+    }
+
+    if (tabId === 'ddos') {
+      return detections.map((d) => {
+        const timestamp = toIso(d.last_request || d.first_request);
+        const primaryIp = Array.isArray(d.source_ips) && d.source_ips.length > 0 ? d.source_ips[0] : null;
+        return {
+          id: d.id || `ddos-${primaryIp || 'unknown'}-${timestamp || 'na'}`,
+          timestamp,
+          threat_type: 'DDOS',
+          source_ip: primaryIp,
+          severity: d.severity,
+          attempt_count: d.total_requests ?? null,
+          description:
+            d.attack_type
+              ? `Potential DDoS (${d.attack_type}): ${d.total_requests ?? 'unknown'} requests`
+              : `Potential DDoS: ${d.total_requests ?? 'unknown'} requests`,
+          additional_info: d,
+        };
+      });
+    }
+
+    // port-scan
+    return detections.map((d) => {
+      const timestamp = toIso(d.last_attempt || d.first_attempt);
+      return {
+        id: d.id || `port-scan-${d.source_ip || 'unknown'}-${timestamp || 'na'}`,
+        timestamp,
+        threat_type: 'PORT_SCAN',
+        source_ip: d.source_ip,
+        severity: d.severity,
+        attempt_count: d.total_attempts ?? null,
+        port: Array.isArray(d.ports_attempted) && d.ports_attempted.length === 1 ? d.ports_attempted[0] : null,
+        description:
+          d.unique_ports_attempted != null
+            ? `Potential port scan: ${d.unique_ports_attempted} unique ports`
+            : 'Potential port scan',
+        additional_info: d,
+      };
+    });
+  };
+
   const fetchThreats = async () => {
     try {
       setLoading(true);
@@ -53,7 +121,7 @@ const Threats = () => {
       if (filters.severity) params.severity = filters.severity;
 
       const data = await activeTabData.endpoint(params);
-      setThreats(Array.isArray(data) ? data : data.detections || []);
+      setThreats(normalizeThreats(activeTab, data));
     } catch (err) {
       console.error('Error fetching threats:', err);
       setError(err.message || 'Failed to load threats');
@@ -103,7 +171,7 @@ const Threats = () => {
 
       let blob;
       let filename;
-      const threatType = activeTab.replace('-', '_');
+      const threatType = activeTab;
 
       if (format === 'csv') {
         blob = await exportThreatsCSV(threatType, params);
