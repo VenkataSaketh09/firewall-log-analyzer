@@ -14,6 +14,21 @@ VIRUS_TOTAL_API_URL = "https://www.virustotal.com/api/v3"
 ip_reputation_cache = db.ip_reputation_cache
 
 
+def _normalize_reputation_fields(rep: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Normalize reputation fields for consistent API responses.
+    - Convert empty strings to None for optional text fields
+    """
+    if not rep:
+        return rep
+    # Some cached / upstream responses may store empty strings; treat as missing.
+    if not rep.get("country"):
+        rep["country"] = None
+    if not rep.get("as_owner"):
+        rep["as_owner"] = None
+    return rep
+
+
 def get_ip_reputation(ip_address: str, use_cache: bool = True) -> Optional[Dict[str, Any]]:
     """
     Get IP address reputation from VirusTotal API.
@@ -42,7 +57,7 @@ def get_ip_reputation(ip_address: str, use_cache: bool = True) -> Optional[Dict[
                         # Return cached result without API call
                         cached_result.pop("_id", None)
                         cached_result.pop("cached_at", None)
-                        return cached_result
+                        return _normalize_reputation_fields(cached_result)
     
     # Make API request to VirusTotal
     try:
@@ -59,6 +74,7 @@ def get_ip_reputation(ip_address: str, use_cache: bool = True) -> Optional[Dict[
         if response.status_code == 200:
             data = response.json()
             reputation_data = _parse_virustotal_response(data)
+            reputation_data = _normalize_reputation_fields(reputation_data)
             
             # Cache the result
             if use_cache:
@@ -113,7 +129,7 @@ def get_ip_reputation(ip_address: str, use_cache: bool = True) -> Optional[Dict[
                 if cached_result:
                     cached_result.pop("_id", None)
                     cached_result.pop("cached_at", None)
-                    return cached_result
+                    return _normalize_reputation_fields(cached_result)
             return None
     
     except Exception as e:
@@ -124,7 +140,7 @@ def get_ip_reputation(ip_address: str, use_cache: bool = True) -> Optional[Dict[
             if cached_result:
                 cached_result.pop("_id", None)
                 cached_result.pop("cached_at", None)
-                return cached_result
+                return _normalize_reputation_fields(cached_result)
         return None
 
 
@@ -171,9 +187,10 @@ def _parse_virustotal_response(data: Dict) -> Dict[str, Any]:
             detection_names.append(result.get("result", "Malicious"))
     
     # Get location data
-    country = attributes.get("country", "")
+    # VirusTotal may omit these fields; avoid storing empty strings so clients can display "N/A" consistently.
+    country = attributes.get("country") or None
     asn = attributes.get("asn", None)
-    as_owner = attributes.get("as_owner", "")
+    as_owner = attributes.get("as_owner") or None
     
     # Last analysis date
     last_analysis_date = attributes.get("last_analysis_date", None)

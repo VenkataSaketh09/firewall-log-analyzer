@@ -20,7 +20,8 @@ const ThreatDetailsModal = ({ threat, isOpen, onClose, ipTimelineData = [] }) =>
     try {
       setLoadingReputation(true);
       const data = await getIPReputation(ip);
-      setIpReputation(data);
+      // Backend returns: { ip: string, reputation: VirusTotalReputation | null }
+      setIpReputation(data?.reputation || null);
     } catch (err) {
       console.error('Error fetching IP reputation:', err);
     } finally {
@@ -166,7 +167,9 @@ const ThreatDetailsModal = ({ threat, isOpen, onClose, ipTimelineData = [] }) =>
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                     <div>
                       <label className="block text-xs font-medium text-gray-600">Reputation Score</label>
-                      <p className="mt-1 text-lg font-semibold">{ipReputation.score || 'N/A'}</p>
+                      <p className="mt-1 text-lg font-semibold">
+                        {ipReputation.reputation_score ?? 'N/A'}
+                      </p>
                     </div>
                     <div>
                       <label className="block text-xs font-medium text-gray-600">Threat Level</label>
@@ -178,7 +181,9 @@ const ThreatDetailsModal = ({ threat, isOpen, onClose, ipTimelineData = [] }) =>
                     </div>
                     <div>
                       <label className="block text-xs font-medium text-gray-600">ISP</label>
-                      <p className="mt-1 text-sm">{ipReputation.isp || 'N/A'}</p>
+                      <p className="mt-1 text-sm">
+                        {ipReputation.as_owner || 'N/A'}
+                      </p>
                     </div>
                   </div>
                 </div>

@@ -81,25 +81,55 @@ def get_logs(
         search=search
     )
     
-    # Build sort criteria
-    sort_direction = DESCENDING if sort_order.lower() == "desc" else ASCENDING
-    sort_fields = {
-        "timestamp": ("timestamp", sort_direction),
-        "severity": ("severity", ASCENDING),
-        "source_ip": ("source_ip", ASCENDING),
-        "event_type": ("event_type", ASCENDING),
-    }
-    sort_criteria = [sort_fields.get(sort_by, ("timestamp", DESCENDING))]
-    
     # Calculate skip for pagination
     skip = (page - 1) * page_size
     
     # Get total count
     total = logs_collection.count_documents(query)
     
-    # Get paginated logs
-    cursor = logs_collection.find(query).sort(sort_criteria).skip(skip).limit(page_size)
-    logs = list(cursor)
+    # Special handling for severity sorting (custom order: CRITICAL > HIGH > MEDIUM > LOW)
+    if sort_by == "severity":
+        # Severity order mapping: CRITICAL=0, HIGH=1, MEDIUM=2, LOW=3
+        sort_direction = -1 if sort_order.lower() == "desc" else 1
+        
+        # Use aggregation pipeline for custom severity sorting
+        pipeline = [
+            {"$match": query},
+            {
+                "$addFields": {
+                    "severity_order": {
+                        "$switch": {
+                            "branches": [
+                                {"case": {"$eq": ["$severity", "CRITICAL"]}, "then": 0},
+                                {"case": {"$eq": ["$severity", "HIGH"]}, "then": 1},
+                                {"case": {"$eq": ["$severity", "MEDIUM"]}, "then": 2},
+                                {"case": {"$eq": ["$severity", "LOW"]}, "then": 3}
+                            ],
+                            "default": 99  # Unknown severity values go to end
+                        }
+                    }
+                }
+            },
+            {"$sort": {"severity_order": sort_direction}},
+            {"$skip": skip},
+            {"$limit": page_size},
+            {"$project": {"severity_order": 0}}  # Remove temporary field
+        ]
+        
+        logs = list(logs_collection.aggregate(pipeline))
+    else:
+        # Standard sorting for other fields
+        sort_direction = DESCENDING if sort_order.lower() == "desc" else ASCENDING
+        sort_fields = {
+            "timestamp": ("timestamp", sort_direction),
+            "source_ip": ("source_ip", sort_direction),
+            "event_type": ("event_type", sort_direction),
+        }
+        sort_criteria = [sort_fields.get(sort_by, ("timestamp", DESCENDING))]
+        
+        # Get paginated logs
+        cursor = logs_collection.find(query).sort(sort_criteria).skip(skip).limit(page_size)
+        logs = list(cursor)
     
     # Convert ObjectId to string for JSON serialization
     for log in logs:

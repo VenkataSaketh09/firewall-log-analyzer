@@ -10,6 +10,7 @@ client = MongoClient(MONGO_URI)
 db = client.firewall_analyzer
 logs_collection = db.firewall_logs
 ip_reputation_cache = db.ip_reputation_cache
+saved_reports_collection = db.saved_reports
 
 
 def create_indexes():
@@ -41,6 +42,11 @@ def create_indexes():
             [("destination_port", ASCENDING), ("timestamp", DESCENDING)],
             name="port_timestamp"
         )
+        
+        # Indexes for saved reports collection
+        saved_reports_collection.create_index([("created_at", DESCENDING)], name="reports_created_at_desc")
+        saved_reports_collection.create_index([("report_type", ASCENDING)], name="reports_type_asc")
+        saved_reports_collection.create_index([("period.start", DESCENDING)], name="reports_period_start_desc")
         
         print("Database indexes created successfully")
     except Exception as e:

@@ -1,14 +1,16 @@
-import React, { useState, useEffect } from 'react';
-import { FiDownload, FiFileText, FiFile, FiFileMinus, FiRefreshCw } from 'react-icons/fi';
+import React, { useState } from 'react';
+import { FiDownload, FiFileText, FiFile, FiFileMinus, FiRefreshCw, FiSave } from 'react-icons/fi';
 import {
   getDailyReport,
   getWeeklyReport,
   getCustomReport,
   exportReport,
+  saveReport,
 } from '../services/reportsService';
 import { formatDateForAPI } from '../utils/dateUtils';
 import ReportConfigPanel from '../components/reports/ReportConfigPanel';
 import ReportPreview from '../components/reports/ReportPreview';
+import ReportHistory from '../components/reports/ReportHistoryList';
 
 const Reports = () => {
   const [reportType, setReportType] = useState('daily');
@@ -31,7 +33,7 @@ const Reports = () => {
     { id: 'weekly', label: 'Weekly Report' },
     { id: 'custom', label: 'Custom Report' },
   ];
-
+  
   const generateReport = async () => {
     try {
       setLoading(true);
@@ -39,14 +41,15 @@ const Reports = () => {
       setReport(null);
 
       let data;
-      const params = { ...config };
 
       switch (reportType) {
         case 'daily':
-          data = await getDailyReport(config.date || null);
+          // Backend expects YYYY-MM-DD (not full ISO datetime)
+          data = await getDailyReport(config.date);
           break;
         case 'weekly':
-          data = await getWeeklyReport(config.week_start || null);
+          // Backend expects query param "start_date" in YYYY-MM-DD
+          data = await getWeeklyReport(config.week_start);
           break;
         case 'custom':
           if (!config.start_date || !config.end_date) {
@@ -68,7 +71,8 @@ const Reports = () => {
           throw new Error('Invalid report type');
       }
 
-      setReport(data);
+      // Extract report from response (API returns { report: SecurityReport })
+      setReport(data.report || data);
     } catch (err) {
       console.error('Error generating report:', err);
       setError(err.message || 'Failed to generate report');
@@ -90,7 +94,15 @@ const Reports = () => {
       let blob;
       let filename;
 
-      if (reportType === 'custom') {
+      // Align export params with backend ExportRequest:
+      // - DAILY: date (YYYY-MM-DD)
+      // - WEEKLY: start_date (YYYY-MM-DD)
+      // - CUSTOM: start_date/end_date (ISO)
+      if (reportType === 'daily') {
+        params.date = config.date;
+      } else if (reportType === 'weekly') {
+        params.start_date = config.week_start;
+      } else if (reportType === 'custom') {
         params.start_date = formatDateForAPI(new Date(config.start_date));
         params.end_date = formatDateForAPI(new Date(config.end_date));
       }
@@ -117,6 +129,38 @@ const Reports = () => {
 
   const handleConfigChange = (key, value) => {
     setConfig((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const handleSaveReport = async () => {
+    if (!report) {
+      alert('Please generate a report first');
+      return;
+    }
+
+    const reportName = prompt('Enter a name for this report (optional):');
+    if (reportName === null) return; // User cancelled
+
+    const notes = prompt('Add notes about this report (optional):');
+    if (notes === null) return; // User cancelled
+
+    try {
+      setLoading(true);
+      // report is now the actual SecurityReport object, not wrapped
+      await saveReport(report, reportName || null, notes || null);
+      alert('Report saved successfully!');
+    } catch (err) {
+      console.error('Error saving report:', err);
+      alert('Failed to save report. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleLoadReport = (loadedReport) => {
+    // loadedReport is already the SecurityReport object
+    setReport(loadedReport);
+    // Scroll to top of page to show the loaded report
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   return (
@@ -183,9 +227,18 @@ const Reports = () => {
               {report && (
                 <div className="space-y-2">
                   <button
+                    onClick={handleSaveReport}
+                    disabled={loading}
+                    className="w-full px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:opacity-50 flex items-center justify-center gap-2"
+                  >
+                    <FiSave className="w-4 h-4" />
+                    Save Report
+                  </button>
+                  <button
                     onClick={() => handleExport('pdf')}
                     className="w-full px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 flex items-center justify-center gap-2"
-                  >
+>
+
                     <FiFileMinus className="w-4 h-4" />
                     Export PDF
                   </button>
@@ -221,10 +274,7 @@ const Reports = () => {
 
         {/* Report History */}
         <div className="mt-6 bg-white rounded-lg shadow p-6">
-          <h3 className="text-lg font-semibold text-gray-800 mb-4">Report History</h3>
-          <div className="text-center py-8 text-gray-500">
-            <p>Report history feature coming soon...</p>
-          </div>
+        <ReportHistory onLoadReport={handleLoadReport} />
         </div>
       </div>
     </div>
