@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { FiDownload, FiFileText, FiFile, FiFileMinus, FiRefreshCw, FiSave } from 'react-icons/fi';
 import {
   getDailyReport,
@@ -10,7 +10,7 @@ import {
 import { formatDateForAPI } from '../utils/dateUtils';
 import ReportConfigPanel from '../components/reports/ReportConfigPanel';
 import ReportPreview from '../components/reports/ReportPreview';
-import ReportHistory from '../components/reports/ReportHistory';
+import ReportHistory from '../components/reports/ReportHistoryList';
 
 const Reports = () => {
   const [reportType, setReportType] = useState('daily');
@@ -33,7 +33,10 @@ const Reports = () => {
     { id: 'weekly', label: 'Weekly Report' },
     { id: 'custom', label: 'Custom Report' },
   ];
-
+  const normalizeDate = (date) => {
+    return date ? formatDateForAPI(new Date(date)) : null;
+  };
+  
   const generateReport = async () => {
     try {
       setLoading(true);
@@ -45,10 +48,10 @@ const Reports = () => {
 
       switch (reportType) {
         case 'daily':
-          data = await getDailyReport(config.date || null);
+          data = await getDailyReport(normalizeDate(config.date));
           break;
         case 'weekly':
-          data = await getWeeklyReport(config.week_start || null);
+          data = await getWeeklyReport(normalizeDate(config.week_start));
           break;
         case 'custom':
           if (!config.start_date || !config.end_date) {
@@ -228,7 +231,8 @@ const Reports = () => {
                   <button
                     onClick={() => handleExport('pdf')}
                     className="w-full px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 flex items-center justify-center gap-2"
-                  >
+>
+
                     <FiFileMinus className="w-4 h-4" />
                     Export PDF
                   </button>
@@ -264,7 +268,7 @@ const Reports = () => {
 
         {/* Report History */}
         <div className="mt-6 bg-white rounded-lg shadow p-6">
-          <ReportHistory onLoadReport={handleLoadReport} />
+        <ReportHistory onLoadReport={handleLoadReport} />
         </div>
       </div>
     </div>
