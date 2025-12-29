@@ -1,8 +1,12 @@
 from datetime import datetime
 from typing import Optional
-from fastapi import APIRouter, Query, HTTPException, Body, Security
+from fastapi import APIRouter, Query, HTTPException, Body, Security, Response
+from fastapi.responses import StreamingResponse
 from pydantic import ValidationError
-from app.services.log_queries import get_logs, get_log_by_id, get_statistics, get_top_ips, get_top_ports
+import csv
+import json
+import io
+from app.services.log_queries import get_logs, get_log_by_id, get_statistics, get_top_ips, get_top_ports, build_log_query
 from app.services.virustotal_service import get_multiple_ip_reputations, enhance_severity_with_reputation
 from app.services.log_parser_service import parse_multiple_logs
 from app.middleware.auth_middleware import verify_api_key
@@ -165,6 +169,143 @@ def get_logs_endpoint(
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error retrieving logs: {str(e)}")
+
+
+@router.get("/export")
+def export_logs_endpoint(
+    format: str = Query("csv", regex="^(csv|json)$", description="Export format (csv or json)"),
+    source_ip: Optional[str] = Query(None, description="Filter by source IP"),
+    severity: Optional[str] = Query(None, description="Filter by severity (HIGH, MEDIUM, LOW)"),
+    event_type: Optional[str] = Query(None, description="Filter by event type"),
+    destination_port: Optional[int] = Query(None, description="Filter by destination port"),
+    protocol: Optional[str] = Query(None, description="Filter by protocol"),
+    log_source: Optional[str] = Query(None, description="Filter by log source"),
+    start_date: Optional[datetime] = Query(None, description="Start date (ISO format)"),
+    end_date: Optional[datetime] = Query(None, description="End date (ISO format)"),
+    search: Optional[str] = Query(None, description="Search in source_ip, raw_log, or username"),
+    sort_by: str = Query("timestamp", description="Field to sort by (timestamp, severity, source_ip, event_type)"),
+    sort_order: str = Query("desc", regex="^(asc|desc)$", description="Sort order (asc or desc)")
+):
+    """Export logs in CSV or JSON format with filtering"""
+    try:
+        # Build query
+        query = build_log_query(
+            source_ip=source_ip,
+            severity=severity,
+            event_type=event_type,
+            destination_port=destination_port,
+            protocol=protocol,
+            log_source=log_source,
+            start_date=start_date,
+            end_date=end_date,
+            search=search
+        )
+        
+        # Get all logs matching the query (no pagination for export)
+        from pymongo import DESCENDING, ASCENDING
+        
+        # Special handling for severity sorting (custom order: CRITICAL > HIGH > MEDIUM > LOW)
+        if sort_by == "severity":
+            sort_direction = -1 if sort_order.lower() == "desc" else 1
+            
+            # Use aggregation pipeline for custom severity sorting
+            pipeline = [
+                {"$match": query},
+                {
+                    "$addFields": {
+                        "severity_order": {
+                            "$switch": {
+                                "branches": [
+                                    {"case": {"$eq": ["$severity", "CRITICAL"]}, "then": 0},
+                                    {"case": {"$eq": ["$severity", "HIGH"]}, "then": 1},
+                                    {"case": {"$eq": ["$severity", "MEDIUM"]}, "then": 2},
+                                    {"case": {"$eq": ["$severity", "LOW"]}, "then": 3}
+                                ],
+                                "default": 99  # Unknown severity values go to end
+                            }
+                        }
+                    }
+                },
+                {"$sort": {"severity_order": sort_direction}},
+                {"$project": {"severity_order": 0}}  # Remove temporary field
+            ]
+            
+            logs = list(logs_collection.aggregate(pipeline))
+        else:
+            # Standard sorting for other fields
+            sort_direction = DESCENDING if sort_order.lower() == "desc" else ASCENDING
+            sort_fields = {
+                "timestamp": ("timestamp", sort_direction),
+                "source_ip": ("source_ip", sort_direction),
+                "event_type": ("event_type", sort_direction),
+            }
+            sort_criteria = [sort_fields.get(sort_by, ("timestamp", DESCENDING))]
+            
+            # Fetch all matching logs
+            cursor = logs_collection.find(query).sort(sort_criteria)
+            logs = list(cursor)
+        
+        # Convert ObjectId to string and format timestamps
+        for log in logs:
+            log["_id"] = str(log["_id"])
+            # Format timestamp for display
+            if "timestamp" in log and isinstance(log["timestamp"], datetime):
+                timestamp_str = log["timestamp"].isoformat()
+                log["timestamp"] = timestamp_str
+            elif "timestamp" in log:
+                # Already a string, keep as is
+                pass
+        
+        if format.lower() == "csv":
+            # Export as CSV
+            output = io.StringIO()
+            writer = csv.writer(output)
+            
+            # Write header
+            if logs:
+                headers = ["ID", "Timestamp", "Source IP", "Destination Port", "Protocol", 
+                          "Log Source", "Event Type", "Severity", "Username", "Raw Log"]
+                writer.writerow(headers)
+                
+                # Write data rows
+                for log in logs:
+                    writer.writerow([
+                        log.get("_id", ""),
+                        log.get("timestamp", ""),
+                        log.get("source_ip", ""),
+                        log.get("destination_port", ""),
+                        log.get("protocol", ""),
+                        log.get("log_source", ""),
+                        log.get("event_type", ""),
+                        log.get("severity", ""),
+                        log.get("username", ""),
+                        log.get("raw_log", "")
+                    ])
+            
+            # Convert to bytes
+            csv_content = output.getvalue()
+            output.close()
+            
+            return Response(
+                content=csv_content.encode('utf-8'),
+                media_type="text/csv",
+                headers={
+                    "Content-Disposition": f"attachment; filename=logs_export_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.csv"
+                }
+            )
+        else:
+            # Export as JSON
+            json_content = json.dumps(logs, indent=2, default=str, ensure_ascii=False)
+            
+            return Response(
+                content=json_content.encode('utf-8'),
+                media_type="application/json",
+                headers={
+                    "Content-Disposition": f"attachment; filename=logs_export_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.json"
+                }
+            )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error exporting logs: {str(e)}")
 
 
 @router.get("/{log_id}", response_model=LogResponse)

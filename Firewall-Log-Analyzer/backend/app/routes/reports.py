@@ -1,7 +1,9 @@
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import Optional, List
 from fastapi import APIRouter, Query, HTTPException, Body
 from fastapi.responses import Response
+from bson import ObjectId
+from app.db.mongo import saved_reports_collection
 from app.services.report_service import generate_daily_report, generate_weekly_report, generate_custom_report
 from app.services.export_service import export_to_json, export_to_csv, export_to_pdf_ready, export_to_pdf
 from app.schemas.report_schema import (
@@ -9,7 +11,15 @@ from app.schemas.report_schema import (
     WeeklyReportResponse,
     CustomReportResponse,
     ExportRequest,
-    SecurityReport
+    SecurityReport,
+    SaveReportRequest,
+    SaveReportResponse,
+    SavedReport,
+    SavedReportListItem,
+    ReportHistoryResponse,
+    ReportPeriod,
+    ReportSummary,
+    ThreatSummary
 )
 
 router = APIRouter(prefix="/api/reports", tags=["reports"])
@@ -280,4 +290,149 @@ def export_report(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error exporting report: {str(e)}")
+
+
+@router.post("/save", response_model=SaveReportResponse)
+def save_report(save_request: SaveReportRequest = Body(...)):
+    """
+    Save a generated report to the database for later retrieval.
+    
+    Allows users to save reports with optional name and notes for future reference.
+    """
+    try:
+        report_doc = {
+            "report_name": save_request.report_name,
+            "report": save_request.report.dict(),
+            "created_at": datetime.utcnow().isoformat(),
+            "notes": save_request.notes
+        }
+        
+        result = saved_reports_collection.insert_one(report_doc)
+        
+        return SaveReportResponse(
+            id=str(result.inserted_id),
+            message="Report saved successfully"
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error saving report: {str(e)}")
+
+
+@router.get("/history", response_model=ReportHistoryResponse)
+def get_report_history(
+    limit: int = Query(50, ge=1, le=100, description="Maximum number of reports to return"),
+    skip: int = Query(0, ge=0, description="Number of reports to skip for pagination"),
+    report_type: Optional[str] = Query(None, description="Filter by report type (DAILY, WEEKLY, CUSTOM)")
+):
+    """
+    Get a list of saved reports.
+    
+    Returns a paginated list of saved reports, optionally filtered by report type.
+    """
+    try:
+        query = {}
+        if report_type:
+            query["report.report_type"] = report_type.upper()
+        
+        # Get total count
+        total = saved_reports_collection.count_documents(query)
+        
+        # Get reports sorted by created_at descending
+        cursor = saved_reports_collection.find(query).sort("created_at", -1).skip(skip).limit(limit)
+        
+        reports = []
+        for doc in cursor:
+            try:
+                report_data = doc.get("report", {})
+                period_data = report_data.get("period", {})
+                summary_data = report_data.get("summary", {})
+                
+                # Create SavedReportListItem using id field (which maps to _id via alias)
+                report_item = SavedReportListItem(
+                    id=str(doc["_id"]),
+                    report_name=doc.get("report_name"),
+                    report_type=report_data.get("report_type", ""),
+                    report_date=report_data.get("report_date", ""),
+                    period=ReportPeriod(**period_data) if period_data else ReportPeriod(start="", end=""),
+                    summary=ReportSummary(**summary_data) if summary_data else ReportSummary(
+                        total_logs=0,
+                        security_score=0,
+                        security_status="UNKNOWN",
+                        threat_summary=ThreatSummary(
+                            total_brute_force_attacks=0,
+                            total_ddos_attacks=0,
+                            total_port_scan_attacks=0,
+                            total_threats=0,
+                            critical_threats=0,
+                            high_threats=0,
+                            medium_threats=0,
+                            low_threats=0
+                        )
+                    ),
+                    created_at=doc.get("created_at", ""),
+                    notes=doc.get("notes")
+                )
+                reports.append(report_item)
+            except Exception as e:
+                # Log error but continue processing other reports
+                print(f"Error processing report {doc.get('_id')}: {str(e)}")
+                continue
+        
+        return ReportHistoryResponse(
+            reports=reports,
+            total=total
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error retrieving report history: {str(e)}")
+
+
+@router.get("/history/{report_id}", response_model=SavedReport)
+def get_saved_report(report_id: str):
+    """
+    Get a specific saved report by ID.
+    
+    Returns the full report data including all details.
+    """
+    try:
+        if not ObjectId.is_valid(report_id):
+            raise HTTPException(status_code=400, detail="Invalid report ID format")
+        
+        doc = saved_reports_collection.find_one({"_id": ObjectId(report_id)})
+        
+        if not doc:
+            raise HTTPException(status_code=404, detail="Report not found")
+        
+        return SavedReport(
+            _id=str(doc["_id"]),
+            report_name=doc.get("report_name"),
+            report=SecurityReport(**doc["report"]),
+            created_at=doc.get("created_at", ""),
+            notes=doc.get("notes")
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error retrieving report: {str(e)}")
+
+
+@router.delete("/history/{report_id}")
+def delete_saved_report(report_id: str):
+    """
+    Delete a saved report by ID.
+    
+    Permanently removes the report from the database.
+    """
+    try:
+        if not ObjectId.is_valid(report_id):
+            raise HTTPException(status_code=400, detail="Invalid report ID format")
+        
+        result = saved_reports_collection.delete_one({"_id": ObjectId(report_id)})
+        
+        if result.deleted_count == 0:
+            raise HTTPException(status_code=404, detail="Report not found")
+        
+        return {"message": "Report deleted successfully", "id": report_id}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error deleting report: {str(e)}")
 

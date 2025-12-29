@@ -126,3 +126,46 @@ class ExportResponse(BaseModel):
     content: str = Field(description="Base64 encoded content for binary formats, or plain text for text formats")
     content_type: str = Field(description="MIME type of the exported content")
 
+
+class SavedReport(BaseModel):
+    """Model for a saved report in the database"""
+    id: Optional[str] = Field(None, alias="_id", description="MongoDB document ID")
+    report_name: Optional[str] = Field(None, description="User-provided name for the report")
+    report: SecurityReport = Field(description="The actual report data")
+    created_at: str = Field(description="When the report was saved (ISO format)")
+    notes: Optional[str] = Field(None, description="Optional user notes")
+
+
+class SaveReportRequest(BaseModel):
+    """Request model for saving a report"""
+    report: SecurityReport = Field(description="The report to save")
+    report_name: Optional[str] = Field(None, description="Optional name for the report")
+    notes: Optional[str] = Field(None, description="Optional notes about the report")
+
+
+class SaveReportResponse(BaseModel):
+    """Response model for saving a report"""
+    id: str = Field(description="ID of the saved report")
+    message: str = Field(description="Success message")
+
+
+class SavedReportListItem(BaseModel):
+    """Model for a saved report in the list (summary only)"""
+    id: str = Field(description="MongoDB document ID")
+    report_name: Optional[str] = None
+    report_type: str
+    report_date: str
+    period: ReportPeriod
+    summary: ReportSummary
+    created_at: str
+    notes: Optional[str] = None
+
+    class Config:
+        populate_by_name = True
+
+
+class ReportHistoryResponse(BaseModel):
+    """Response model for report history list"""
+    reports: List[SavedReportListItem]
+    total: int = Field(description="Total number of saved reports")
+
