@@ -1,6 +1,7 @@
 from datetime import datetime
 from typing import Optional
 from fastapi import APIRouter, Query, HTTPException, Body, Security
+from pydantic import ValidationError
 from app.services.log_queries import get_logs, get_log_by_id, get_statistics, get_top_ips, get_top_ports
 from app.services.virustotal_service import get_multiple_ip_reputations, enhance_severity_with_reputation
 from app.services.log_parser_service import parse_multiple_logs
@@ -118,21 +119,42 @@ def get_logs_endpoint(
         # Convert logs to LogResponse models with reputation
         log_responses = []
         for log in result["logs"]:
-            log_dict = dict(log)
-            
-            # Add reputation data if requested
-            if include_reputation:
-                ip = log_dict.get("source_ip")
-                if ip and ip in reputation_data:
-                    reputation = reputation_data[ip]
-                    log_dict["virustotal"] = reputation
-                    
-                    # Enhance severity based on reputation
-                    if reputation.get("detected"):
-                        original_severity = log_dict.get("severity", "LOW")
-                        log_dict["severity"] = enhance_severity_with_reputation(original_severity, reputation)
-            
-            log_responses.append(LogResponse(**log_dict))
+            try:
+                log_dict = dict(log)
+                
+                # Ensure required fields have default values if missing
+                if "timestamp" not in log_dict or log_dict["timestamp"] is None:
+                    continue  # Skip logs without timestamp
+                if "source_ip" not in log_dict or not log_dict["source_ip"]:
+                    log_dict["source_ip"] = "Unknown"
+                if "log_source" not in log_dict or not log_dict["log_source"]:
+                    log_dict["log_source"] = "unknown"
+                if "event_type" not in log_dict or not log_dict["event_type"]:
+                    log_dict["event_type"] = "UNKNOWN"
+                if "severity" not in log_dict or not log_dict["severity"]:
+                    log_dict["severity"] = "LOW"
+                if "raw_log" not in log_dict or log_dict["raw_log"] is None:
+                    log_dict["raw_log"] = ""
+                
+                # Add reputation data if requested
+                if include_reputation:
+                    ip = log_dict.get("source_ip")
+                    if ip and ip in reputation_data:
+                        reputation = reputation_data[ip]
+                        log_dict["virustotal"] = reputation
+                        
+                        # Enhance severity based on reputation
+                        if reputation.get("detected"):
+                            original_severity = log_dict.get("severity", "LOW")
+                            log_dict["severity"] = enhance_severity_with_reputation(original_severity, reputation)
+                
+                log_responses.append(LogResponse(**log_dict))
+            except ValidationError as e:
+                # Skip logs that fail Pydantic validation
+                continue
+            except Exception as e:
+                # Skip any other errors for individual log entries
+                continue
         
         return LogsResponse(
             logs=log_responses,
@@ -157,22 +179,41 @@ def get_log_endpoint(
     if not log:
         raise HTTPException(status_code=404, detail="Log not found")
     
-    log_dict = dict(log)
-    
-    # Add reputation data if requested
-    if include_reputation:
-        ip = log_dict.get("source_ip")
-        if ip:
-            reputation = get_ip_reputation(ip)
-            if reputation:
-                log_dict["virustotal"] = reputation
-                
-                # Enhance severity based on reputation
-                if reputation.get("detected"):
-                    original_severity = log_dict.get("severity", "LOW")
-                    log_dict["severity"] = enhance_severity_with_reputation(original_severity, reputation)
-    
-    return LogResponse(**log_dict)
+    try:
+        log_dict = dict(log)
+        
+        # Ensure required fields have default values if missing
+        if "timestamp" not in log_dict or log_dict["timestamp"] is None:
+            raise HTTPException(status_code=500, detail="Log entry is missing required timestamp field")
+        if "source_ip" not in log_dict or not log_dict["source_ip"]:
+            log_dict["source_ip"] = "Unknown"
+        if "log_source" not in log_dict or not log_dict["log_source"]:
+            log_dict["log_source"] = "unknown"
+        if "event_type" not in log_dict or not log_dict["event_type"]:
+            log_dict["event_type"] = "UNKNOWN"
+        if "severity" not in log_dict or not log_dict["severity"]:
+            log_dict["severity"] = "LOW"
+        if "raw_log" not in log_dict or log_dict["raw_log"] is None:
+            log_dict["raw_log"] = ""
+        
+        # Add reputation data if requested
+        if include_reputation:
+            ip = log_dict.get("source_ip")
+            if ip:
+                reputation = get_ip_reputation(ip)
+                if reputation:
+                    log_dict["virustotal"] = reputation
+                    
+                    # Enhance severity based on reputation
+                    if reputation.get("detected"):
+                        original_severity = log_dict.get("severity", "LOW")
+                        log_dict["severity"] = enhance_severity_with_reputation(original_severity, reputation)
+        
+        return LogResponse(**log_dict)
+    except ValidationError as e:
+        raise HTTPException(status_code=500, detail=f"Log entry validation failed: {str(e)}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error retrieving log: {str(e)}")
 
 
 @router.get("/stats/summary", response_model=StatsResponse)

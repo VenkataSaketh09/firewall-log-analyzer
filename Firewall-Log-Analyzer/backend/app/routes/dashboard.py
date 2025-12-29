@@ -134,14 +134,20 @@ def get_dashboard_summary():
             low_count=sum(1 for d in all_threats if d.get("severity") == "LOW")
         )
         
-        # 3. Get top IPs (last 24 hours)
-        top_ips_data = get_top_ips(limit=10, start_date=start_date, end_date=end_date)
+        # 3. Get top IPs (use last 7 days for better data, fallback to all-time if needed)
+        top_ips_start_date = end_date - timedelta(days=7)
+        top_ips_data = get_top_ips(limit=10, start_date=top_ips_start_date, end_date=end_date)
+        
+        # Fallback to all-time if no data in last 7 days
+        if not top_ips_data:
+            top_ips_data = get_top_ips(limit=10, start_date=None, end_date=None)
+        
         top_ips = []
         
         for ip_data in top_ips_data:
-            # Get last seen timestamp for this IP
+            # Get last seen timestamp for this IP (all-time, not just last 24h)
             last_log = logs_collection.find_one(
-                {"source_ip": ip_data["source_ip"], "timestamp": {"$gte": start_date, "$lte": end_date}},
+                {"source_ip": ip_data["source_ip"]},
                 {"timestamp": 1},
                 sort=[("timestamp", DESCENDING)]
             )
