@@ -173,16 +173,16 @@ const ThreatDetailsModal = ({ threat, isOpen, onClose, ipTimelineData = [] }) =>
                     </div>
                     <div>
                       <label className="block text-xs font-medium text-gray-600">Threat Level</label>
-                      <p className="mt-1 text-sm">{ipReputation.threat_level ?? 'N/A'}</p>
+                      <p className="mt-1 text-sm">{ipReputation.threat_level || 'N/A'}</p>
                     </div>
                     <div>
                       <label className="block text-xs font-medium text-gray-600">Country</label>
-                      <p className="mt-1 text-sm">{ipReputation.country ?? 'N/A'}</p>
+                      <p className="mt-1 text-sm">{ipReputation.country || 'N/A'}</p>
                     </div>
                     <div>
                       <label className="block text-xs font-medium text-gray-600">ISP</label>
                       <p className="mt-1 text-sm">
-                        {ipReputation.as_owner ?? 'N/A'}
+                        {ipReputation.as_owner || 'N/A'}
                       </p>
                     </div>
                   </div>
