@@ -1,0 +1,273 @@
+import React, { useState, useEffect } from 'react';
+import { FiDownload, FiRefreshCw, FiFileText, FiFile, FiGrid, FiList } from 'react-icons/fi';
+import {
+  getBruteForceThreats,
+  getDDoSThreats,
+  getPortScanThreats,
+  exportThreatsCSV,
+  exportThreatsJSON,
+} from '../services/threatsService';
+import { formatDateForAPI } from '../utils/dateUtils';
+import ThreatFilterPanel from '../components/threats/ThreatFilterPanel';
+import ThreatCard from '../components/threats/ThreatCard';
+import ThreatsTable from '../components/threats/ThreatsTable';
+import ThreatDetailsModal from '../components/threats/ThreatDetailsModal';
+
+const Threats = () => {
+  const [activeTab, setActiveTab] = useState('brute-force');
+  const [threats, setThreats] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [selectedThreat, setSelectedThreat] = useState(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [viewMode, setViewMode] = useState('card'); // 'card' or 'table'
+  const [filters, setFilters] = useState({
+    start_date: null,
+    end_date: null,
+    source_ip: '',
+    severity: '',
+  });
+
+  const threatTabs = [
+    { id: 'brute-force', label: 'Brute Force', endpoint: getBruteForceThreats },
+    { id: 'ddos', label: 'DDoS', endpoint: getDDoSThreats },
+    { id: 'port-scan', label: 'Port Scan', endpoint: getPortScanThreats },
+  ];
+
+  const fetchThreats = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      const activeTabData = threatTabs.find((tab) => tab.id === activeTab);
+      if (!activeTabData) return;
+
+      const params = {};
+      if (filters.start_date) {
+        params.start_date = formatDateForAPI(new Date(filters.start_date));
+      }
+      if (filters.end_date) {
+        params.end_date = formatDateForAPI(new Date(filters.end_date));
+      }
+      if (filters.source_ip) params.source_ip = filters.source_ip;
+      if (filters.severity) params.severity = filters.severity;
+
+      const data = await activeTabData.endpoint(params);
+      setThreats(Array.isArray(data) ? data : data.threats || []);
+    } catch (err) {
+      console.error('Error fetching threats:', err);
+      setError(err.message || 'Failed to load threats');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchThreats();
+  }, [activeTab]);
+
+  // Debounce filter changes
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      fetchThreats();
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, [filters]);
+
+  const handleFilterChange = (key, value) => {
+    setFilters((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const handleResetFilters = () => {
+    setFilters({
+      start_date: null,
+      end_date: null,
+      source_ip: '',
+      severity: '',
+    });
+  };
+
+  const handleViewDetails = (threat) => {
+    setSelectedThreat(threat);
+    setIsModalOpen(true);
+  };
+
+  const handleExport = async (format) => {
+    try {
+      const params = {};
+      if (filters.start_date) params.start_date = formatDateForAPI(new Date(filters.start_date));
+      if (filters.end_date) params.end_date = formatDateForAPI(new Date(filters.end_date));
+      if (filters.source_ip) params.source_ip = filters.source_ip;
+      if (filters.severity) params.severity = filters.severity;
+
+      let blob;
+      let filename;
+      const threatType = activeTab.replace('-', '_');
+
+      if (format === 'csv') {
+        blob = await exportThreatsCSV(threatType, params);
+        filename = `${activeTab}_threats_${new Date().toISOString().split('T')[0]}.csv`;
+      } else {
+        blob = await exportThreatsJSON(threatType, params);
+        filename = `${activeTab}_threats_${new Date().toISOString().split('T')[0]}.json`;
+      }
+
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (err) {
+      console.error('Error exporting threats:', err);
+      alert('Failed to export threats. Please try again.');
+    }
+  };
+
+  // Generate timeline data for selected threat (mock data - adjust based on API)
+  const getTimelineData = (threat) => {
+    if (!threat) return [];
+    // This would typically come from an API endpoint
+    // For now, return empty array - you can implement based on your API
+    return [];
+  };
+
+  return (
+    <div className="min-h-screen bg-gray-50 p-6">
+      <div className="max-w-7xl mx-auto">
+        {/* Header */}
+        <div className="mb-6 flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900">Security Threats</h1>
+            <p className="text-gray-600 mt-1">Analyze detected attacks and security threats</p>
+          </div>
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 border border-gray-300 rounded-md">
+              <button
+                onClick={() => setViewMode('card')}
+                className={`p-2 ${viewMode === 'card' ? 'bg-blue-600 text-white' : 'text-gray-600'}`}
+              >
+                <FiGrid className="w-5 h-5" />
+              </button>
+              <button
+                onClick={() => setViewMode('table')}
+                className={`p-2 ${viewMode === 'table' ? 'bg-blue-600 text-white' : 'text-gray-600'}`}
+              >
+                <FiList className="w-5 h-5" />
+              </button>
+            </div>
+            <button
+              onClick={fetchThreats}
+              disabled={loading}
+              className="px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700 disabled:opacity-50 flex items-center gap-2"
+            >
+              <FiRefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+              Refresh
+            </button>
+            <div className="relative group">
+              <button className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 flex items-center gap-2">
+                <FiDownload className="w-4 h-4" />
+                Export
+              </button>
+              <div className="absolute right-0 mt-2 w-40 bg-white rounded-md shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-10">
+                <button
+                  onClick={() => handleExport('csv')}
+                  className="w-full text-left px-4 py-2 hover:bg-gray-100 flex items-center gap-2 text-sm"
+                >
+                  <FiFileText className="w-4 h-4" />
+                  Export as CSV
+                </button>
+                <button
+                  onClick={() => handleExport('json')}
+                  className="w-full text-left px-4 py-2 hover:bg-gray-100 flex items-center gap-2 text-sm"
+                >
+                  <FiFile className="w-4 h-4" />
+                  Export as JSON
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Threat Type Tabs */}
+        <div className="mb-6 border-b border-gray-200">
+          <nav className="flex space-x-8">
+            {threatTabs.map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`py-4 px-1 border-b-2 font-medium text-sm ${
+                  activeTab === tab.id
+                    ? 'border-blue-500 text-blue-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </nav>
+        </div>
+
+        {/* Filters */}
+        <ThreatFilterPanel
+          filters={filters}
+          onFilterChange={handleFilterChange}
+          onReset={handleResetFilters}
+        />
+
+        {/* Error Message */}
+        {error && (
+          <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg">
+            <p className="text-red-800">{error}</p>
+          </div>
+        )}
+
+        {/* Threats List */}
+        {loading && threats.length === 0 ? (
+          <div className="bg-white rounded-lg shadow p-12 text-center">
+            <FiRefreshCw className="w-8 h-8 animate-spin mx-auto text-blue-600 mb-4" />
+            <p className="text-gray-600">Loading threats...</p>
+          </div>
+        ) : threats.length === 0 ? (
+          <div className="bg-white rounded-lg shadow p-12 text-center">
+            <p className="text-gray-500">No threats found</p>
+          </div>
+        ) : viewMode === 'card' ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {threats.map((threat) => (
+              <ThreatCard key={threat.id} threat={threat} onViewDetails={handleViewDetails} />
+            ))}
+          </div>
+        ) : (
+          <ThreatsTable threats={threats} onViewDetails={handleViewDetails} />
+        )}
+
+        {/* Stats */}
+        {threats.length > 0 && (
+          <div className="mt-6 p-4 bg-white rounded-lg shadow">
+            <p className="text-sm text-gray-600">
+              Showing <span className="font-semibold">{threats.length}</span> threat(s)
+            </p>
+          </div>
+        )}
+      </div>
+
+      {/* Threat Details Modal */}
+      <ThreatDetailsModal
+        threat={selectedThreat}
+        isOpen={isModalOpen}
+        onClose={() => {
+          setIsModalOpen(false);
+          setSelectedThreat(null);
+        }}
+        ipTimelineData={getTimelineData(selectedThreat)}
+      />
+    </div>
+  );
+};
+
+export default Threats;
+

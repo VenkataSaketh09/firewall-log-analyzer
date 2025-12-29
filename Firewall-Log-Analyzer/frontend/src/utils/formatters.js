@@ -40,12 +40,18 @@ export const formatSeverity = (severity) => {
  * Format threat type
  */
 export const formatThreatType = (type) => {
+  if (!type) return 'Unknown';
+  
+  const normalizedType = type.toUpperCase().replace(/-/g, '_');
   const types = {
     BRUTE_FORCE: 'Brute Force',
+    BRUTEFORCE: 'Brute Force',
     DDOS: 'DDoS',
+    D_DOS: 'DDoS',
     PORT_SCAN: 'Port Scan',
+    PORTSCAN: 'Port Scan',
   };
-  return types[type] || type;
+  return types[normalizedType] || types[type] || type.replace(/_/g, ' ').replace(/-/g, ' ');
 };
 
 /**
