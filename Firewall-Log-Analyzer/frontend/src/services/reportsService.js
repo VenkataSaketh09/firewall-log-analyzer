@@ -16,7 +16,8 @@ export const getDailyReport = async (date = null) => {
  */
 export const getWeeklyReport = async (weekStart = null) => {
   const params = {};
-  if (weekStart) params.week_start = weekStart;
+  // Backend expects query param: start_date (YYYY-MM-DD)
+  if (weekStart) params.start_date = weekStart;
 
   const response = await api.get('/api/reports/weekly', { params });
   return response.data;

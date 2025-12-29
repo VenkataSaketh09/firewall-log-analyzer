@@ -33,9 +33,6 @@ const Reports = () => {
     { id: 'weekly', label: 'Weekly Report' },
     { id: 'custom', label: 'Custom Report' },
   ];
-  const normalizeDate = (date) => {
-    return date ? formatDateForAPI(new Date(date)) : null;
-  };
   
   const generateReport = async () => {
     try {
@@ -47,10 +44,12 @@ const Reports = () => {
 
       switch (reportType) {
         case 'daily':
-          data = await getDailyReport(normalizeDate(config.date));
+          // Backend expects YYYY-MM-DD (not full ISO datetime)
+          data = await getDailyReport(config.date);
           break;
         case 'weekly':
-          data = await getWeeklyReport(normalizeDate(config.week_start));
+          // Backend expects query param "start_date" in YYYY-MM-DD
+          data = await getWeeklyReport(config.week_start);
           break;
         case 'custom':
           if (!config.start_date || !config.end_date) {
@@ -95,7 +94,15 @@ const Reports = () => {
       let blob;
       let filename;
 
-      if (reportType === 'custom') {
+      // Align export params with backend ExportRequest:
+      // - DAILY: date (YYYY-MM-DD)
+      // - WEEKLY: start_date (YYYY-MM-DD)
+      // - CUSTOM: start_date/end_date (ISO)
+      if (reportType === 'daily') {
+        params.date = config.date;
+      } else if (reportType === 'weekly') {
+        params.start_date = config.week_start;
+      } else if (reportType === 'custom') {
         params.start_date = formatDateForAPI(new Date(config.start_date));
         params.end_date = formatDateForAPI(new Date(config.end_date));
       }
