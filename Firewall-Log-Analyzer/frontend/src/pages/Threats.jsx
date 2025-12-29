@@ -53,7 +53,7 @@ const Threats = () => {
       if (filters.severity) params.severity = filters.severity;
 
       const data = await activeTabData.endpoint(params);
-      setThreats(Array.isArray(data) ? data : data.threats || []);
+      setThreats(Array.isArray(data) ? data : data.detections || []);
     } catch (err) {
       console.error('Error fetching threats:', err);
       setError(err.message || 'Failed to load threats');

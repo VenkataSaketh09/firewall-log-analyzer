@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { FiDownload, FiRefreshCw, FiFileText, FiFile } from 'react-icons/fi';
 import { getLogs, exportLogsCSV, exportLogsJSON } from '../services/logsService';
 import { formatDateForAPI } from '../utils/dateUtils';
@@ -13,6 +13,8 @@ const Logs = () => {
   const [selectedLog, setSelectedLog] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedLogs, setSelectedLogs] = useState([]);
+  const [showExportMenu, setShowExportMenu] = useState(false);
+  const exportMenuRef = useRef(null);
   const [pagination, setPagination] = useState({
     page: 1,
     page_size: 50,
@@ -86,6 +88,23 @@ const Logs = () => {
     return () => clearTimeout(timer);
   }, [filters]);
 
+  // Close export menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (exportMenuRef.current && !exportMenuRef.current.contains(event.target)) {
+        setShowExportMenu(false);
+      }
+    };
+
+    if (showExportMenu) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showExportMenu]);
+
   const handleFilterChange = (key, value) => {
     setFilters((prev) => ({ ...prev, [key]: value }));
   };
@@ -130,7 +149,7 @@ const Logs = () => {
 
   const handleSelectAll = (checked) => {
     if (checked) {
-      setSelectedLogs(logs.map((log) => log.id));
+      setSelectedLogs(logs.map((log) => log.id || log._id));
     } else {
       setSelectedLogs([]);
     }
@@ -190,27 +209,46 @@ const Logs = () => {
               <FiRefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
               Refresh
             </button>
-            <div className="relative group">
-              <button className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 flex items-center gap-2">
+            <div className="relative" ref={exportMenuRef}>
+              <button 
+                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 flex items-center gap-2"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowExportMenu(!showExportMenu);
+                }}
+              >
                 <FiDownload className="w-4 h-4" />
                 Export
               </button>
-              <div className="absolute right-0 mt-2 w-40 bg-white rounded-md shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-10">
-                <button
-                  onClick={() => handleExport('csv')}
-                  className="w-full text-left px-4 py-2 hover:bg-gray-100 flex items-center gap-2 text-sm"
+              {showExportMenu && (
+                <div 
+                  className="absolute right-0 mt-2 w-40 bg-white rounded-md shadow-lg z-50 border border-gray-200"
+                  onClick={(e) => e.stopPropagation()}
                 >
-                  <FiFileText className="w-4 h-4" />
-                  Export as CSV
-                </button>
-                <button
-                  onClick={() => handleExport('json')}
-                  className="w-full text-left px-4 py-2 hover:bg-gray-100 flex items-center gap-2 text-sm"
-                >
-                  <FiFile className="w-4 h-4" />
-                  Export as JSON
-                </button>
-              </div>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleExport('csv');
+                      setShowExportMenu(false);
+                    }}
+                    className="w-full text-left px-4 py-2 hover:bg-gray-100 flex items-center gap-2 text-sm transition-colors"
+                  >
+                    <FiFileText className="w-4 h-4" />
+                    Export as CSV
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleExport('json');
+                      setShowExportMenu(false);
+                    }}
+                    className="w-full text-left px-4 py-2 hover:bg-gray-100 flex items-center gap-2 text-sm transition-colors"
+                  >
+                    <FiFile className="w-4 h-4" />
+                    Export as JSON
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </div>

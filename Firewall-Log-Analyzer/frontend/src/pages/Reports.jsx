@@ -1,14 +1,16 @@
 import React, { useState, useEffect } from 'react';
-import { FiDownload, FiFileText, FiFile, FiFileMinus, FiRefreshCw } from 'react-icons/fi';
+import { FiDownload, FiFileText, FiFile, FiFileMinus, FiRefreshCw, FiSave } from 'react-icons/fi';
 import {
   getDailyReport,
   getWeeklyReport,
   getCustomReport,
   exportReport,
+  saveReport,
 } from '../services/reportsService';
 import { formatDateForAPI } from '../utils/dateUtils';
 import ReportConfigPanel from '../components/reports/ReportConfigPanel';
 import ReportPreview from '../components/reports/ReportPreview';
+import ReportHistory from '../components/reports/ReportHistory';
 
 const Reports = () => {
   const [reportType, setReportType] = useState('daily');
@@ -68,7 +70,8 @@ const Reports = () => {
           throw new Error('Invalid report type');
       }
 
-      setReport(data);
+      // Extract report from response (API returns { report: SecurityReport })
+      setReport(data.report || data);
     } catch (err) {
       console.error('Error generating report:', err);
       setError(err.message || 'Failed to generate report');
@@ -117,6 +120,38 @@ const Reports = () => {
 
   const handleConfigChange = (key, value) => {
     setConfig((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const handleSaveReport = async () => {
+    if (!report) {
+      alert('Please generate a report first');
+      return;
+    }
+
+    const reportName = prompt('Enter a name for this report (optional):');
+    if (reportName === null) return; // User cancelled
+
+    const notes = prompt('Add notes about this report (optional):');
+    if (notes === null) return; // User cancelled
+
+    try {
+      setLoading(true);
+      // report is now the actual SecurityReport object, not wrapped
+      await saveReport(report, reportName || null, notes || null);
+      alert('Report saved successfully!');
+    } catch (err) {
+      console.error('Error saving report:', err);
+      alert('Failed to save report. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleLoadReport = (loadedReport) => {
+    // loadedReport is already the SecurityReport object
+    setReport(loadedReport);
+    // Scroll to top of page to show the loaded report
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   return (
@@ -183,6 +218,14 @@ const Reports = () => {
               {report && (
                 <div className="space-y-2">
                   <button
+                    onClick={handleSaveReport}
+                    disabled={loading}
+                    className="w-full px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:opacity-50 flex items-center justify-center gap-2"
+                  >
+                    <FiSave className="w-4 h-4" />
+                    Save Report
+                  </button>
+                  <button
                     onClick={() => handleExport('pdf')}
                     className="w-full px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 flex items-center justify-center gap-2"
                   >
@@ -221,10 +264,7 @@ const Reports = () => {
 
         {/* Report History */}
         <div className="mt-6 bg-white rounded-lg shadow p-6">
-          <h3 className="text-lg font-semibold text-gray-800 mb-4">Report History</h3>
-          <div className="text-center py-8 text-gray-500">
-            <p>Report history feature coming soon...</p>
-          </div>
+          <ReportHistory onLoadReport={handleLoadReport} />
         </div>
       </div>
     </div>

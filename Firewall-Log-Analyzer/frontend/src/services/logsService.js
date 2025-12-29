@@ -30,7 +30,13 @@ export const getLogs = async (params = {}) => {
   if (source_ip) queryParams.source_ip = source_ip;
   if (severity) queryParams.severity = severity;
   if (protocol) queryParams.protocol = protocol;
-  if (port) queryParams.port = port;
+  if (port) {
+    // Convert port to integer and use destination_port parameter name (backend expects integer)
+    const portNum = parseInt(port, 10);
+    if (!isNaN(portNum)) {
+      queryParams.destination_port = portNum;
+    }
+  }
   if (search) queryParams.search = search;
 
   const response = await api.get('/api/logs', { params: queryParams });
@@ -59,8 +65,17 @@ export const getTopIPs = async (limit = 10) => {
  * Export logs as CSV
  */
 export const exportLogsCSV = async (params = {}) => {
+  const exportParams = { ...params, format: 'csv' };
+  // Convert port to destination_port if present
+  if (exportParams.port) {
+    const portNum = parseInt(exportParams.port, 10);
+    if (!isNaN(portNum)) {
+      exportParams.destination_port = portNum;
+    }
+    delete exportParams.port;
+  }
   const response = await api.get('/api/logs/export', {
-    params: { ...params, format: 'csv' },
+    params: exportParams,
     responseType: 'blob',
   });
   return response.data;
@@ -70,8 +85,17 @@ export const exportLogsCSV = async (params = {}) => {
  * Export logs as JSON
  */
 export const exportLogsJSON = async (params = {}) => {
+  const exportParams = { ...params, format: 'json' };
+  // Convert port to destination_port if present
+  if (exportParams.port) {
+    const portNum = parseInt(exportParams.port, 10);
+    if (!isNaN(portNum)) {
+      exportParams.destination_port = portNum;
+    }
+    delete exportParams.port;
+  }
   const response = await api.get('/api/logs/export', {
-    params: { ...params, format: 'json' },
+    params: exportParams,
     responseType: 'blob',
   });
   return response.data;
