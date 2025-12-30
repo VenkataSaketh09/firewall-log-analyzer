@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { FiDownload, FiRefreshCw, FiFileText, FiFile, FiFileMinus } from 'react-icons/fi';
-import { getLogs, exportLogsCSV, exportLogsJSON, exportLogsPDF } from '../services/logsService';
+import { getLogs, exportLogsCSV, exportLogsJSON, exportLogsPDF, exportSelectedLogsPDF } from '../services/logsService';
 import { formatDateForAPI } from '../utils/dateUtils';
 import LogFilterPanel from '../components/logs/LogFilterPanel';
 import LogsTable from '../components/logs/LogsTable';
@@ -272,6 +272,21 @@ const Logs = () => {
     downloadBlob(blob, `selected_logs_${selected.length}_${dateStr}.csv`);
   };
 
+  const exportSelectedLogsPDFHandler = async () => {
+    const selectedIds = selectedLogs.filter(Boolean);
+    if (selectedIds.length === 0) {
+      alert('No logs selected');
+      return;
+    }
+    try {
+      const blob = await exportSelectedLogsPDF(selectedIds);
+      const dateStr = new Date().toISOString().split('T')[0];
+      downloadBlob(blob, `selected_logs_${selectedIds.length}_${dateStr}.pdf`);
+    } catch (err) {
+      console.error('Error exporting selected logs to PDF:', err);
+      alert('Failed to export selected logs to PDF. Please try again.');
+    }
+  };
   return (
     <div className="min-h-screen bg-gray-50 p-6">
       <div className="max-w-7xl mx-auto">
@@ -396,6 +411,17 @@ const Logs = () => {
                     >
                       <FiFile className="w-4 h-4" />
                       Export Selected JSON
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        exportSelectedLogsPDFHandler();
+                        setShowSelectedExportMenu(false);
+                      }}
+                      className="w-full text-left px-4 py-2 hover:bg-gray-100 flex items-center gap-2 text-sm transition-colors"
+                    >
+                      <FiFileMinus className="w-4 h-4" />
+                      Export Selected PDF
                     </button>
                   </div>
                 )}

@@ -124,3 +124,15 @@ export const exportLogsPDF = async (params = {}) => {
   return response.data;
 };
 
+/**
+ * Export specific selected logs as PDF (color-coded per row)
+ */
+export const exportSelectedLogsPDF = async (logIds = []) => {
+  const response = await api.post(
+    '/api/logs/export/pdf',
+    { log_ids: logIds },
+    { responseType: 'blob' }
+  );
+  return response.data;
+};
+

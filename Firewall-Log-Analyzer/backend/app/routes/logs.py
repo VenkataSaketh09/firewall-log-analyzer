@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Optional
 from fastapi import APIRouter, Query, HTTPException, Body, Security, Response
 from fastapi.responses import StreamingResponse
-from pydantic import ValidationError
+from pydantic import ValidationError, BaseModel, Field
 import csv
 import json
 import io
@@ -16,6 +16,9 @@ from app.schemas.ingestion_schema import LogIngestionRequest, LogIngestionRespon
 from app.db.mongo import logs_collection
 
 router = APIRouter(prefix="/api/logs", tags=["logs"])
+
+class SelectedLogsPdfExportRequest(BaseModel):
+    log_ids: list[str] = Field(..., min_length=1, description="List of log document IDs to export")
 
 
 @router.post("/ingest", response_model=LogIngestionResponse)
@@ -395,6 +398,49 @@ def export_logs_pdf_endpoint(
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error exporting logs to PDF: {str(e)}")
+
+
+@router.post("/export/pdf")
+def export_selected_logs_pdf_endpoint(body: SelectedLogsPdfExportRequest = Body(...)):
+    """Export specific selected logs to PDF (color-coded per row)"""
+    try:
+        from bson import ObjectId
+
+        obj_ids = []
+        for raw in body.log_ids:
+            if ObjectId.is_valid(raw):
+                obj_ids.append(ObjectId(raw))
+
+        if not obj_ids:
+            raise HTTPException(status_code=400, detail="No valid log IDs provided")
+
+        # Fetch and keep order (by timestamp desc) for readability
+        logs = list(
+            logs_collection.find({"_id": {"$in": obj_ids}})
+            .sort("timestamp", -1)
+        )
+
+        normalized = []
+        for log in logs:
+            d = dict(log)
+            d["_id"] = str(d.get("_id"))
+            ts = d.get("timestamp")
+            if isinstance(ts, datetime):
+                d["timestamp"] = ts.isoformat()
+            normalized.append(d)
+
+        pdf_bytes = export_logs_to_pdf(normalized, title="Selected Firewall Logs Export")
+        return Response(
+            content=pdf_bytes,
+            media_type="application/pdf",
+            headers={
+                "Content-Disposition": f"attachment; filename=selected_logs_export_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.pdf"
+            }
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error exporting selected logs to PDF: {str(e)}")
 
 
 @router.get("/{log_id}", response_model=LogResponse)
