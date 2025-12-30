@@ -263,7 +263,7 @@ def export_logs_endpoint(
             
             # Write header
             if logs:
-                headers = ["ID", "Timestamp", "Source IP", "Destination Port", "Protocol", 
+                headers = ["ID", "Timestamp", "Source IP", "Destination IP", "Source Port", "Destination Port", "Protocol",
                           "Log Source", "Event Type", "Severity", "Username", "Raw Log"]
                 writer.writerow(headers)
                 
@@ -273,6 +273,8 @@ def export_logs_endpoint(
                         log.get("_id", ""),
                         log.get("timestamp", ""),
                         log.get("source_ip", ""),
+                        log.get("destination_ip", ""),
+                        log.get("source_port", ""),
                         log.get("destination_port", ""),
                         log.get("protocol", ""),
                         log.get("log_source", ""),

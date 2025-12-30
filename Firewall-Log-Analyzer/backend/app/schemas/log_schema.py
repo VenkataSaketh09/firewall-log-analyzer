@@ -25,6 +25,8 @@ class LogResponse(BaseModel):
     id: Optional[str] = Field(None, alias="_id")
     timestamp: datetime
     source_ip: str
+    destination_ip: Optional[str] = None
+    source_port: Optional[int] = None
     destination_port: Optional[int] = None
     protocol: Optional[str] = None
     log_source: str

@@ -91,6 +91,8 @@ def parse_iptables_log(line: str) -> Optional[dict]:
     return build_log(
         timestamp=timestamp,
         source_ip=source_ip,
+        destination_ip=destination_ip,
+        source_port=source_port,
         destination_port=destination_port,
         protocol=protocol,
         log_source="iptables",

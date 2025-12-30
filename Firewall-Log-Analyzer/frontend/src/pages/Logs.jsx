@@ -15,6 +15,8 @@ const Logs = () => {
   const [selectedLogs, setSelectedLogs] = useState([]);
   const [showExportMenu, setShowExportMenu] = useState(false);
   const exportMenuRef = useRef(null);
+  const [showSelectedExportMenu, setShowSelectedExportMenu] = useState(false);
+  const selectedExportMenuRef = useRef(null);
   const [pagination, setPagination] = useState({
     page: 1,
     page_size: 50,
@@ -59,7 +61,12 @@ const Logs = () => {
       if (filters.search) params.search = filters.search;
 
       const data = await getLogs(params);
-      setLogs(data.logs || []);
+      // Normalize backend id field: FastAPI/Pydantic may return either "id" or "_id"
+      const normalizedLogs = (data.logs || []).map((log) => ({
+        ...log,
+        id: log.id ?? log._id,
+      }));
+      setLogs(normalizedLogs);
       setPagination({
         page: data.page || 1,
         page_size: data.page_size || 50,
@@ -94,16 +101,22 @@ const Logs = () => {
       if (exportMenuRef.current && !exportMenuRef.current.contains(event.target)) {
         setShowExportMenu(false);
       }
+      if (selectedExportMenuRef.current && !selectedExportMenuRef.current.contains(event.target)) {
+        setShowSelectedExportMenu(false);
+      }
     };
 
     if (showExportMenu) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    if (showSelectedExportMenu) {
       document.addEventListener('mousedown', handleClickOutside);
     }
 
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
     };
-  }, [showExportMenu]);
+  }, [showExportMenu, showSelectedExportMenu]);
 
   const handleFilterChange = (key, value) => {
     setFilters((prev) => ({ ...prev, [key]: value }));
@@ -149,10 +162,21 @@ const Logs = () => {
 
   const handleSelectAll = (checked) => {
     if (checked) {
-      setSelectedLogs(logs.map((log) => log.id || log._id));
+      setSelectedLogs(logs.map((log) => log.id).filter(Boolean));
     } else {
       setSelectedLogs([]);
     }
+  };
+
+  const downloadBlob = (blob, filename) => {
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
   };
 
   const handleExport = async (format) => {
@@ -177,18 +201,64 @@ const Logs = () => {
         filename = `logs_export_${new Date().toISOString().split('T')[0]}.json`;
       }
 
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
+      downloadBlob(blob, filename);
     } catch (err) {
       console.error('Error exporting logs:', err);
       alert('Failed to export logs. Please try again.');
     }
+  };
+
+  const exportSelectedLogs = (format) => {
+    const selected = logs.filter((log) => selectedLogs.includes(log.id));
+    if (selected.length === 0) {
+      alert('No logs selected');
+      return;
+    }
+
+    const dateStr = new Date().toISOString().split('T')[0];
+
+    if (format === 'json') {
+      const json = JSON.stringify(selected, null, 2);
+      const blob = new Blob([json], { type: 'application/json' });
+      downloadBlob(blob, `selected_logs_${selected.length}_${dateStr}.json`);
+      return;
+    }
+
+    // CSV export (client-side) for selected rows
+    const csvEscape = (v) => {
+      if (v === null || v === undefined) return '""';
+      const s = String(v);
+      return `"${s.replace(/"/g, '""')}"`;
+    };
+
+    const headers = [
+      'ID',
+      'Timestamp',
+      'Source IP',
+      'Destination Port',
+      'Protocol',
+      'Log Source',
+      'Event Type',
+      'Severity',
+      'Username',
+      'Raw Log',
+    ];
+    const rows = selected.map((log) => [
+      log.id,
+      log.timestamp,
+      log.source_ip,
+      log.destination_port,
+      log.protocol,
+      log.log_source,
+      log.event_type,
+      log.severity,
+      log.username,
+      log.raw_log,
+    ]);
+
+    const csv = [headers, ...rows].map((r) => r.map(csvEscape).join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    downloadBlob(blob, `selected_logs_${selected.length}_${dateStr}.csv`);
   };
 
   return (
@@ -266,12 +336,55 @@ const Logs = () => {
             <span className="text-sm text-blue-800">
               {selectedLogs.length} log(s) selected
             </span>
-            <button
-              onClick={() => setSelectedLogs([])}
-              className="text-sm text-blue-600 hover:text-blue-800"
-            >
-              Clear Selection
-            </button>
+            <div className="flex items-center gap-3">
+              <div className="relative" ref={selectedExportMenuRef}>
+                <button
+                  className="px-3 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 flex items-center gap-2 text-sm"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setShowSelectedExportMenu(!showSelectedExportMenu);
+                  }}
+                >
+                  <FiDownload className="w-4 h-4" />
+                  Export Selected
+                </button>
+                {showSelectedExportMenu && (
+                  <div
+                    className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg z-50 border border-gray-200"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        exportSelectedLogs('csv');
+                        setShowSelectedExportMenu(false);
+                      }}
+                      className="w-full text-left px-4 py-2 hover:bg-gray-100 flex items-center gap-2 text-sm transition-colors"
+                    >
+                      <FiFileText className="w-4 h-4" />
+                      Export Selected CSV
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        exportSelectedLogs('json');
+                        setShowSelectedExportMenu(false);
+                      }}
+                      className="w-full text-left px-4 py-2 hover:bg-gray-100 flex items-center gap-2 text-sm transition-colors"
+                    >
+                      <FiFile className="w-4 h-4" />
+                      Export Selected JSON
+                    </button>
+                  </div>
+                )}
+              </div>
+              <button
+                onClick={() => setSelectedLogs([])}
+                className="text-sm text-blue-600 hover:text-blue-800"
+              >
+                Clear Selection
+              </button>
+            </div>
           </div>
         )}
 
