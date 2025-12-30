@@ -54,6 +54,30 @@ curl -X POST -H "Content-Type: application/json" \
   http://localhost:8000/api/ml/retrain
 ```
 
+### Model versioning (Phase 11)
+Every retrain creates two snapshots in `ml_engine/models/versions/`:
+- **pre**: before retraining (safety snapshot)
+- **post**: after retraining (marked active)
+
+List versions:
+
+```bash
+curl http://localhost:8000/api/ml/versions
+```
+
+Rollback:
+
+```bash
+curl -X POST -H "Content-Type: application/json" \
+  -d '{"version_id":"2025-12-30_20-40-12"}' \
+  http://localhost:8000/api/ml/rollback
+```
+
+### Auto retraining (optional)
+Enable automatic retraining worker via env vars:
+- `ML_AUTO_RETRAIN=true`
+- `ML_AUTO_RETRAIN_INTERVAL_HOURS=168` (default: 7 days)
+
 Check retrain status:
 
 ```bash

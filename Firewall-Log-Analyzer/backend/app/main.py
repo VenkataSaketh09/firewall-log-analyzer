@@ -12,6 +12,7 @@ from app.middleware.rate_limit import RateLimitMiddleware
 from app.config import validate_environment
 from app.services.retention_service import start_log_retention_worker
 from app.services.ml_service import ml_service
+from app.services.ml_auto_retrain_worker import start_auto_retrain_worker
 from datetime import datetime
 import sys
 
@@ -62,6 +63,8 @@ async def startup_event():
         print("✓ ML service initialized")
     else:
         print("! ML service not available (falling back to rule-based)")
+    # Optional auto retraining (env-controlled)
+    start_auto_retrain_worker()
     print("✓ FastAPI application started successfully")
 
 

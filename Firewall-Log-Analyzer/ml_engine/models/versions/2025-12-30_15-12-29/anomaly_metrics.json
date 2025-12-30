@@ -7,6 +7,48 @@
     "sha256": "7c86d7b0ecb961a25f00d9475a154df97613b9974f31ce142a146caa2017c71e",
     "structured_csv": "dataset/Linux_2k.log_structured.csv"
   },
+  "evaluations": [
+    {
+      "evaluated_at_utc": "2025-12-30T12:50:15.752687+00:00",
+      "test": {
+        "accuracy": 0.76,
+        "confusion_matrix": {
+          "fn": 23,
+          "fp": 49,
+          "tn": 10,
+          "tp": 218
+        },
+        "f1": 0.858267716535433,
+        "precision": 0.8164794007490637,
+        "recall": 0.9045643153526971,
+        "roc_auc": 0.4947253674660665,
+        "score_by_label": {
+          "BRUTE_FORCE": {
+            "count": 92,
+            "max": 1.0,
+            "mean": 0.6936553053486086,
+            "median": 0.6700738361006038,
+            "min": 0.4148816245389968
+          },
+          "NORMAL": {
+            "count": 59,
+            "max": 1.0,
+            "mean": 0.6840105848825427,
+            "median": 0.6674335881037387,
+            "min": 0.32663436375242383
+          },
+          "SUSPICIOUS": {
+            "count": 149,
+            "max": 1.0,
+            "mean": 0.676894969116355,
+            "median": 0.6708937638944835,
+            "min": 0.3160716037814789
+          }
+        },
+        "threshold": 0.5
+      }
+    }
+  ],
   "features": {
     "count": 47,
     "names": [
@@ -111,7 +153,7 @@
     },
     "threshold": 0.5
   },
-  "trained_at_utc": "2025-12-30T15:12:49.529450+00:00",
+  "trained_at_utc": "2025-12-30T12:49:27.084747+00:00",
   "validation": {
     "accuracy": 0.7466666666666667,
     "confusion_matrix": {

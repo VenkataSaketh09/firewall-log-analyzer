@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 
 from app.services.ml_service import ml_service
 from app.services.ml_storage import start_training_run, finish_training_run
+from app.services.ml_retrain_pipeline import run_retrain
 
 router = APIRouter(prefix="/api/ml", tags=["ml"])
 
@@ -35,27 +36,11 @@ def _run_retrain(train_anomaly: bool, train_classifier: bool) -> None:
     run_id = start_training_run(requested)
     _LAST_RETRAIN = {"status": "running", "started_at": datetime.utcnow().isoformat(), "finished_at": None, "error": None, "run_id": run_id}
     try:
-        # Ensure ml_engine imports work in backend context
-        ml_service.initialize(force_reload=True)
-
-        results: Dict[str, Any] = {}
-
-        if train_anomaly:
-            from ml_engine.training.train_anomaly_detector import train_anomaly_model
-
-            results["anomaly"] = train_anomaly_model(force_refit_scaler=False)
-
-        if train_classifier:
-            from ml_engine.training.train_threat_classifier import train_classifier_model
-
-            results["classifier"] = train_classifier_model(force_refit_scaler=False)
-
-        # Reload models after training
-        ml_service.initialize(force_reload=True)
-
+        payload = run_retrain(train_anomaly, train_classifier, run_id=run_id)
         _LAST_RETRAIN["status"] = "completed"
         _LAST_RETRAIN["finished_at"] = datetime.utcnow().isoformat()
-        finish_training_run(run_id, status="completed", results={"results": results})
+        _LAST_RETRAIN["versions"] = {"pre": payload.get("pre_version"), "post": payload.get("post_version")}
+        finish_training_run(run_id, status="completed", results=payload)
     except Exception as e:
         _LAST_RETRAIN["status"] = "failed"
         _LAST_RETRAIN["finished_at"] = datetime.utcnow().isoformat()
@@ -116,5 +101,35 @@ def retrain_models(body: RetrainRequest = Body(...), background: BackgroundTasks
 
     background.add_task(_run_retrain, body.train_anomaly, body.train_classifier)
     return {"status": "scheduled", "requested": body.model_dump(), "retrain": _LAST_RETRAIN}
+
+
+@router.get("/versions")
+def list_model_versions(limit: int = 50):
+    try:
+        ml_service.initialize()
+        from ml_engine.utils.model_versioning import list_versions, get_active_version
+
+        return {"active_version": get_active_version(), "versions": list_versions(limit=limit)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error listing model versions: {str(e)}")
+
+
+class RollbackRequest(BaseModel):
+    version_id: str = Field(..., description="Version id folder name under ml_engine/models/versions/")
+
+
+@router.post("/rollback")
+def rollback_models(body: RollbackRequest = Body(...)):
+    try:
+        ml_service.initialize()
+        from ml_engine.utils.model_versioning import rollback_to_version, get_active_version
+
+        rollback_to_version(body.version_id)
+        ml_service.initialize(force_reload=True)
+        return {"status": "rolled_back", "active_version": get_active_version()}
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Rollback failed: {str(e)}")
 
 

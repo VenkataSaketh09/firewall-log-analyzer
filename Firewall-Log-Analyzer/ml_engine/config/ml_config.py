@@ -24,6 +24,10 @@ ANOMALY_METRICS_FILE = MODELS_DIR / "anomaly_metrics.json"
 CLASSIFIER_METRICS_FILE = MODELS_DIR / "classifier_metrics.json"
 MODEL_METADATA_FILE = MODELS_DIR / "model_metadata.json"
 
+# Phase 11: model versioning
+MODEL_VERSIONS_DIR = MODELS_DIR / "versions"
+ACTIVE_VERSION_FILE = MODELS_DIR / "ACTIVE_VERSION.txt"
+
 # Dataset paths
 DATASET_CSV = DATASET_DIR / "Linux_2k.log_structured.csv"
 DATASET_TEMPLATES = DATASET_DIR / "Linux_2k.log_templates.csv"
