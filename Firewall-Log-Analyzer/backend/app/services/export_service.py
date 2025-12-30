@@ -388,6 +388,18 @@ def export_to_pdf(report_data: Dict[str, Any]) -> bytes:
 
     # Threat tables (optional)
     if threat_detections:
+        def sev_bg(sev: str):
+            s = (sev or "").upper()
+            if s == "CRITICAL":
+                return colors.HexColor("#FEE2E2")  # light red
+            if s == "HIGH":
+                return colors.HexColor("#FFEDD5")  # light orange
+            if s == "MEDIUM":
+                return colors.HexColor("#FEF9C3")  # light yellow
+            if s == "LOW":
+                return colors.HexColor("#DCFCE7")  # light green
+            return colors.HexColor("#F3F4F6")      # gray
+
         story.append(Paragraph("Threat Detections - Brute Force", styles["Heading2"]))
         bf = threat_detections.get("brute_force_attacks", []) or []
         bf_table_data = [["Source IP", "Attempts", "Severity", "First", "Last"]]
@@ -400,11 +412,15 @@ def export_to_pdf(report_data: Dict[str, Any]) -> bytes:
                 str(a.get("last_attempt", "") or ""),
             ])
         bf_table = Table(bf_table_data, colWidths=[120, 60, 70, 135, 135])
-        bf_table.setStyle(TableStyle([
+        bf_style = [
             ("BACKGROUND", (0, 0), (-1, 0), colors.lightgrey),
             ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
             ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-        ]))
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ]
+        for i, row in enumerate(bf[:20], start=1):
+            bf_style.append(("BACKGROUND", (0, i), (-1, i), sev_bg(row.get("severity"))))
+        bf_table.setStyle(TableStyle(bf_style))
         story.append(bf_table)
         story.append(Spacer(1, 14))
 
@@ -421,11 +437,15 @@ def export_to_pdf(report_data: Dict[str, Any]) -> bytes:
                 str(a.get("severity", "")),
             ])
         dd_table = Table(dd_table_data, colWidths=[140, 50, 70, 80, 90, 80])
-        dd_table.setStyle(TableStyle([
+        dd_style = [
             ("BACKGROUND", (0, 0), (-1, 0), colors.lightgrey),
             ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
             ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-        ]))
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ]
+        for i, row in enumerate(dd[:20], start=1):
+            dd_style.append(("BACKGROUND", (0, i), (-1, i), sev_bg(row.get("severity"))))
+        dd_table.setStyle(TableStyle(dd_style))
         story.append(dd_table)
         story.append(Spacer(1, 14))
 
@@ -443,11 +463,15 @@ def export_to_pdf(report_data: Dict[str, Any]) -> bytes:
                     str(a.get("last_attempt", "") or ""),
                 ])
             ps_table = Table(ps_table_data, colWidths=[120, 60, 75, 70, 95, 100])
-            ps_table.setStyle(TableStyle([
+            ps_style = [
                 ("BACKGROUND", (0, 0), (-1, 0), colors.lightgrey),
                 ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
                 ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-            ]))
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ]
+            for i, row in enumerate(ps[:20], start=1):
+                ps_style.append(("BACKGROUND", (0, i), (-1, i), sev_bg(row.get("severity"))))
+            ps_table.setStyle(TableStyle(ps_style))
             story.append(ps_table)
             story.append(Spacer(1, 14))
 
@@ -473,12 +497,15 @@ def export_to_pdf(report_data: Dict[str, Any]) -> bytes:
                 str(log.get("raw_log", "") or "")[:200],
             ])
         dl_table = Table(dl_table_data, colWidths=[120, 90, 120, 70, 150])
-        dl_table.setStyle(TableStyle([
+        dl_style = [
             ("BACKGROUND", (0, 0), (-1, 0), colors.lightgrey),
             ("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
             ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
             ("VALIGN", (0, 0), (-1, -1), "TOP"),
-        ]))
+        ]
+        for i, row in enumerate(detailed[:100], start=1):
+            dl_style.append(("BACKGROUND", (0, i), (-1, i), sev_bg(row.get("severity"))))
+        dl_table.setStyle(TableStyle(dl_style))
         story.append(dl_table)
         story.append(Spacer(1, 14))
 
