@@ -10,11 +10,15 @@ def build_log(
     event_type: str,
     severity: str,
     username: Optional[str],
-    raw_log: str
+    raw_log: str,
+    destination_ip: Optional[str] = None,
+    source_port: Optional[int] = None,
 ):
     return {
         "timestamp": timestamp,
         "source_ip": source_ip,
+        "destination_ip": destination_ip,
+        "source_port": source_port,
         "destination_port": destination_port,
         "protocol": protocol,
         "log_source": log_source,

@@ -6,12 +6,14 @@ import {
   getPortScanThreats,
   exportThreatsCSV,
   exportThreatsJSON,
+  getBruteForceTimeline,
 } from '../services/threatsService';
 import { formatDateForAPI } from '../utils/dateUtils';
 import ThreatFilterPanel from '../components/threats/ThreatFilterPanel';
 import ThreatCard from '../components/threats/ThreatCard';
 import ThreatsTable from '../components/threats/ThreatsTable';
 import ThreatDetailsModal from '../components/threats/ThreatDetailsModal';
+import dayjs from 'dayjs';
 
 const Threats = () => {
   const [activeTab, setActiveTab] = useState('brute-force');
@@ -21,6 +23,8 @@ const Threats = () => {
   const [selectedThreat, setSelectedThreat] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [viewMode, setViewMode] = useState('card'); // 'card' or 'table'
+  const [ipTimelineData, setIpTimelineData] = useState([]);
+  const [timelineLoading, setTimelineLoading] = useState(false);
   const [filters, setFilters] = useState({
     start_date: null,
     end_date: null,
@@ -156,9 +160,46 @@ const Threats = () => {
     });
   };
 
+  const buildTimelineSeriesHourly = (timeline = []) => {
+    // Backend returns a list of attempts. Convert into hourly buckets for charting.
+    const buckets = new Map();
+    for (const evt of timeline) {
+      const ts = evt?.timestamp;
+      if (!ts) continue;
+      const hour = dayjs(ts).utc().startOf('hour').toISOString();
+      buckets.set(hour, (buckets.get(hour) || 0) + 1);
+    }
+    return Array.from(buckets.entries())
+      .map(([timestamp, count]) => ({ timestamp, count }))
+      .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+  };
+
+  const fetchTimelineForThreat = async (threat) => {
+    setIpTimelineData([]);
+    if (!threat || !threat.source_ip) return;
+    if (activeTab !== 'brute-force') return; // only brute-force timeline exists currently
+
+    try {
+      setTimelineLoading(true);
+      const params = {};
+      if (filters.start_date) params.start_date = formatDateForAPI(new Date(filters.start_date));
+      if (filters.end_date) params.end_date = formatDateForAPI(new Date(filters.end_date));
+
+      const data = await getBruteForceTimeline(threat.source_ip, params);
+      const series = buildTimelineSeriesHourly(data?.timeline || []);
+      setIpTimelineData(series);
+    } catch (err) {
+      console.error('Error fetching threat timeline:', err);
+      setIpTimelineData([]);
+    } finally {
+      setTimelineLoading(false);
+    }
+  };
+
   const handleViewDetails = (threat) => {
     setSelectedThreat(threat);
     setIsModalOpen(true);
+    fetchTimelineForThreat(threat);
   };
 
   const handleExport = async (format) => {
@@ -195,13 +236,12 @@ const Threats = () => {
     }
   };
 
-  // Generate timeline data for selected threat (mock data - adjust based on API)
-  const getTimelineData = (threat) => {
-    if (!threat) return [];
-    // This would typically come from an API endpoint
-    // For now, return empty array - you can implement based on your API
-    return [];
-  };
+  // If user switches tabs while modal is open, timeline should reset (timeline endpoint differs per threat type).
+  useEffect(() => {
+    if (!isModalOpen) return;
+    fetchTimelineForThreat(selectedThreat);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab]);
 
   return (
     <div className="min-h-screen bg-gray-50 p-6">
@@ -330,8 +370,9 @@ const Threats = () => {
         onClose={() => {
           setIsModalOpen(false);
           setSelectedThreat(null);
+          setIpTimelineData([]);
         }}
-        ipTimelineData={getTimelineData(selectedThreat)}
+        ipTimelineData={timelineLoading ? [] : ipTimelineData}
       />
     </div>
   );

@@ -2,11 +2,12 @@ from datetime import datetime
 from typing import Optional
 from fastapi import APIRouter, Query, HTTPException, Body, Security, Response
 from fastapi.responses import StreamingResponse
-from pydantic import ValidationError
+from pydantic import ValidationError, BaseModel, Field
 import csv
 import json
 import io
 from app.services.log_queries import get_logs, get_log_by_id, get_statistics, get_top_ips, get_top_ports, build_log_query
+from app.services.export_service import export_logs_to_pdf
 from app.services.virustotal_service import get_multiple_ip_reputations, enhance_severity_with_reputation
 from app.services.log_parser_service import parse_multiple_logs
 from app.middleware.auth_middleware import verify_api_key
@@ -15,6 +16,9 @@ from app.schemas.ingestion_schema import LogIngestionRequest, LogIngestionRespon
 from app.db.mongo import logs_collection
 
 router = APIRouter(prefix="/api/logs", tags=["logs"])
+
+class SelectedLogsPdfExportRequest(BaseModel):
+    log_ids: list[str] = Field(..., min_length=1, description="List of log document IDs to export")
 
 
 @router.post("/ingest", response_model=LogIngestionResponse)
@@ -263,7 +267,7 @@ def export_logs_endpoint(
             
             # Write header
             if logs:
-                headers = ["ID", "Timestamp", "Source IP", "Destination Port", "Protocol", 
+                headers = ["ID", "Timestamp", "Source IP", "Destination IP", "Source Port", "Destination Port", "Protocol",
                           "Log Source", "Event Type", "Severity", "Username", "Raw Log"]
                 writer.writerow(headers)
                 
@@ -273,6 +277,8 @@ def export_logs_endpoint(
                         log.get("_id", ""),
                         log.get("timestamp", ""),
                         log.get("source_ip", ""),
+                        log.get("destination_ip", ""),
+                        log.get("source_port", ""),
                         log.get("destination_port", ""),
                         log.get("protocol", ""),
                         log.get("log_source", ""),
@@ -306,6 +312,135 @@ def export_logs_endpoint(
             )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error exporting logs: {str(e)}")
+
+
+@router.get("/export/pdf")
+def export_logs_pdf_endpoint(
+    limit: int = Query(1000, ge=1, le=5000, description="Maximum number of logs to export to PDF"),
+    source_ip: Optional[str] = Query(None, description="Filter by source IP"),
+    severity: Optional[str] = Query(None, description="Filter by severity (CRITICAL, HIGH, MEDIUM, LOW)"),
+    event_type: Optional[str] = Query(None, description="Filter by event type"),
+    destination_port: Optional[int] = Query(None, description="Filter by destination port"),
+    protocol: Optional[str] = Query(None, description="Filter by protocol"),
+    log_source: Optional[str] = Query(None, description="Filter by log source"),
+    start_date: Optional[datetime] = Query(None, description="Start date (ISO format)"),
+    end_date: Optional[datetime] = Query(None, description="End date (ISO format)"),
+    search: Optional[str] = Query(None, description="Search in source_ip, raw_log, or username"),
+    sort_by: str = Query("timestamp", description="Field to sort by (timestamp, severity, source_ip, event_type)"),
+    sort_order: str = Query("desc", regex="^(asc|desc)$", description="Sort order (asc or desc)")
+):
+    """Export logs to PDF (color-coded per row) with filtering"""
+    try:
+        query = build_log_query(
+            source_ip=source_ip,
+            severity=severity,
+            event_type=event_type,
+            destination_port=destination_port,
+            protocol=protocol,
+            log_source=log_source,
+            start_date=start_date,
+            end_date=end_date,
+            search=search
+        )
+
+        from pymongo import DESCENDING, ASCENDING
+
+        if sort_by == "severity":
+            sort_direction = -1 if sort_order.lower() == "desc" else 1
+            pipeline = [
+                {"$match": query},
+                {
+                    "$addFields": {
+                        "severity_order": {
+                            "$switch": {
+                                "branches": [
+                                    {"case": {"$eq": ["$severity", "CRITICAL"]}, "then": 0},
+                                    {"case": {"$eq": ["$severity", "HIGH"]}, "then": 1},
+                                    {"case": {"$eq": ["$severity", "MEDIUM"]}, "then": 2},
+                                    {"case": {"$eq": ["$severity", "LOW"]}, "then": 3}
+                                ],
+                                "default": 99
+                            }
+                        }
+                    }
+                },
+                {"$sort": {"severity_order": sort_direction}},
+                {"$limit": limit},
+                {"$project": {"severity_order": 0}}
+            ]
+            logs = list(logs_collection.aggregate(pipeline))
+        else:
+            sort_direction = DESCENDING if sort_order.lower() == "desc" else ASCENDING
+            sort_fields = {
+                "timestamp": ("timestamp", sort_direction),
+                "source_ip": ("source_ip", sort_direction),
+                "event_type": ("event_type", sort_direction),
+            }
+            sort_criteria = [sort_fields.get(sort_by, ("timestamp", DESCENDING))]
+            logs = list(logs_collection.find(query).sort(sort_criteria).limit(limit))
+
+        normalized = []
+        for log in logs:
+            d = dict(log)
+            d["_id"] = str(d.get("_id"))
+            ts = d.get("timestamp")
+            if isinstance(ts, datetime):
+                d["timestamp"] = ts.isoformat()
+            normalized.append(d)
+
+        pdf_bytes = export_logs_to_pdf(normalized, title="Firewall Logs Export")
+        return Response(
+            content=pdf_bytes,
+            media_type="application/pdf",
+            headers={
+                "Content-Disposition": f"attachment; filename=logs_export_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.pdf"
+            }
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error exporting logs to PDF: {str(e)}")
+
+
+@router.post("/export/pdf")
+def export_selected_logs_pdf_endpoint(body: SelectedLogsPdfExportRequest = Body(...)):
+    """Export specific selected logs to PDF (color-coded per row)"""
+    try:
+        from bson import ObjectId
+
+        obj_ids = []
+        for raw in body.log_ids:
+            if ObjectId.is_valid(raw):
+                obj_ids.append(ObjectId(raw))
+
+        if not obj_ids:
+            raise HTTPException(status_code=400, detail="No valid log IDs provided")
+
+        # Fetch and keep order (by timestamp desc) for readability
+        logs = list(
+            logs_collection.find({"_id": {"$in": obj_ids}})
+            .sort("timestamp", -1)
+        )
+
+        normalized = []
+        for log in logs:
+            d = dict(log)
+            d["_id"] = str(d.get("_id"))
+            ts = d.get("timestamp")
+            if isinstance(ts, datetime):
+                d["timestamp"] = ts.isoformat()
+            normalized.append(d)
+
+        pdf_bytes = export_logs_to_pdf(normalized, title="Selected Firewall Logs Export")
+        return Response(
+            content=pdf_bytes,
+            media_type="application/pdf",
+            headers={
+                "Content-Disposition": f"attachment; filename=selected_logs_export_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.pdf"
+            }
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error exporting selected logs to PDF: {str(e)}")
 
 
 @router.get("/{log_id}", response_model=LogResponse)

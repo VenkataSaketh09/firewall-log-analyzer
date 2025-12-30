@@ -24,6 +24,30 @@ from app.schemas.report_schema import (
 
 router = APIRouter(prefix="/api/reports", tags=["reports"])
 
+def _apply_report_includes(
+    report_data: dict,
+    *,
+    include_charts: bool = True,
+    include_summary: bool = True,
+    include_threats: bool = True,
+    include_logs: bool = False,
+) -> dict:
+    # Mutate a shallow copy to avoid surprising callers.
+    d = dict(report_data or {})
+    if not include_summary:
+        d.pop("summary", None)
+        d.pop("recommendations", None)
+    if not include_charts:
+        d.pop("log_statistics", None)
+        d.pop("time_breakdown", None)
+    if not include_threats:
+        d.pop("threat_detections", None)
+        d.pop("top_threat_sources", None)
+        d.pop("malicious_ip_analysis", None)
+    if not include_logs:
+        d.pop("detailed_logs", None)
+    return d
+
 
 @router.get("/daily", response_model=DailyReportResponse)
 def get_daily_report(
@@ -102,7 +126,11 @@ def get_weekly_report(
 @router.get("/custom", response_model=CustomReportResponse)
 def get_custom_report(
     start_date: str = Query(..., description="Start date for the report (ISO format: YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS)"),
-    end_date: str = Query(..., description="End date for the report (ISO format: YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS)")
+    end_date: str = Query(..., description="End date for the report (ISO format: YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS)"),
+    include_charts: bool = Query(True, description="Include charts/statistics sections"),
+    include_summary: bool = Query(True, description="Include executive summary section"),
+    include_threats: bool = Query(True, description="Include threats sections"),
+    include_logs: bool = Query(False, description="Include detailed logs section (may be truncated)")
 ):
     """
     Generate a custom date range security report.
@@ -146,7 +174,14 @@ def get_custom_report(
                 detail="start_date must be before end_date"
             )
         
-        report_data = generate_custom_report(start_date=start_dt, end_date=end_dt)
+        report_data = generate_custom_report(
+            start_date=start_dt,
+            end_date=end_dt,
+            include_charts=include_charts,
+            include_summary=include_summary,
+            include_threats=include_threats,
+            include_logs=include_logs,
+        )
         
         # Convert to response model
         report = SecurityReport(**report_data)
@@ -171,6 +206,12 @@ def export_report(
     - PDF: Backend-generated PDF file download
     """
     try:
+        # Determine include_* toggles (default to legacy behavior if omitted)
+        include_charts = export_request.include_charts if export_request.include_charts is not None else True
+        include_summary = export_request.include_summary if export_request.include_summary is not None else True
+        include_threats = export_request.include_threats if export_request.include_threats is not None else True
+        include_logs = export_request.include_logs if export_request.include_logs is not None else False
+
         # Generate report based on type
         report_data = None
         
@@ -242,6 +283,15 @@ def export_report(
                 detail="Invalid report_type. Must be DAILY, WEEKLY, or CUSTOM"
             )
         
+        # Apply include_* options before exporting
+        report_data = _apply_report_includes(
+            report_data,
+            include_charts=include_charts,
+            include_summary=include_summary,
+            include_threats=include_threats,
+            include_logs=include_logs,
+        )
+
         # Export in requested format
         format_lower = export_request.format.lower()
         content = None

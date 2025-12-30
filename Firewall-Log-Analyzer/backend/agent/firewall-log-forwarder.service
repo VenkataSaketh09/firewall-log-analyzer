@@ -1,0 +1,19 @@
+[Unit]
+Description=Firewall Log Analyzer - Remote Log Forwarder
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+Environment=FLA_INGEST_URL=http://<backend-host>:8000/api/logs/ingest
+Environment=FLA_API_KEY=<api-key>
+WorkingDirectory=/opt/firewall-log-analyzer
+ExecStart=/usr/bin/python3 /opt/firewall-log-analyzer/backend/agent/log_forwarder.py --batch-size 200 --flush-seconds 2
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
+
+

@@ -82,12 +82,20 @@ class SecurityReport(BaseModel):
     report_type: str = Field(description="Report type: DAILY, WEEKLY, or CUSTOM")
     report_date: str = Field(description="When the report was generated (ISO format)")
     period: ReportPeriod
-    summary: ReportSummary
-    log_statistics: Dict[str, Any] = Field(description="Log statistics including distributions, top IPs, ports, etc.")
-    threat_detections: ThreatDetections
-    top_threat_sources: List[ThreatSourceSummary]
-    recommendations: List[str]
+    # These are optional so include_* toggles can omit sections cleanly.
+    summary: Optional[ReportSummary] = None
+    log_statistics: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Log statistics including distributions, top IPs, ports, etc."
+    )
+    threat_detections: Optional[ThreatDetections] = None
+    top_threat_sources: Optional[List[ThreatSourceSummary]] = None
+    recommendations: Optional[List[str]] = None
     time_breakdown: Optional[List[Dict[str, Any]]] = None
+    detailed_logs: Optional[List[Dict[str, Any]]] = Field(
+        default=None,
+        description="Optional detailed logs included when include_logs=true (may be truncated)"
+    )
 
     class Config:
         json_encoders = {
@@ -117,6 +125,10 @@ class ExportRequest(BaseModel):
     date: Optional[str] = Field(None, description="Date for daily report (ISO format, YYYY-MM-DD)")
     start_date: Optional[str] = Field(None, description="Start date for weekly/custom report (ISO format)")
     end_date: Optional[str] = Field(None, description="End date for custom report (ISO format)")
+    include_charts: Optional[bool] = Field(None, description="Include chart/statistics sections")
+    include_summary: Optional[bool] = Field(None, description="Include executive summary section")
+    include_threats: Optional[bool] = Field(None, description="Include threats sections")
+    include_logs: Optional[bool] = Field(None, description="Include detailed logs section (may be truncated)")
 
 
 class ExportResponse(BaseModel):

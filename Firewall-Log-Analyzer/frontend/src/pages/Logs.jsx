@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { FiDownload, FiRefreshCw, FiFileText, FiFile } from 'react-icons/fi';
-import { getLogs, exportLogsCSV, exportLogsJSON } from '../services/logsService';
+import { FiDownload, FiRefreshCw, FiFileText, FiFile, FiFileMinus } from 'react-icons/fi';
+import { getLogs, exportLogsCSV, exportLogsJSON, exportLogsPDF, exportSelectedLogsPDF } from '../services/logsService';
 import { formatDateForAPI } from '../utils/dateUtils';
 import LogFilterPanel from '../components/logs/LogFilterPanel';
 import LogsTable from '../components/logs/LogsTable';
@@ -15,6 +15,8 @@ const Logs = () => {
   const [selectedLogs, setSelectedLogs] = useState([]);
   const [showExportMenu, setShowExportMenu] = useState(false);
   const exportMenuRef = useRef(null);
+  const [showSelectedExportMenu, setShowSelectedExportMenu] = useState(false);
+  const selectedExportMenuRef = useRef(null);
   const [pagination, setPagination] = useState({
     page: 1,
     page_size: 50,
@@ -28,6 +30,8 @@ const Logs = () => {
     end_date: null,
     source_ip: '',
     severity: '',
+    event_type: '',
+    log_source: '',
     protocol: '',
     port: '',
     search: '',
@@ -54,12 +58,19 @@ const Logs = () => {
       }
       if (filters.source_ip) params.source_ip = filters.source_ip;
       if (filters.severity) params.severity = filters.severity;
+      if (filters.event_type) params.event_type = filters.event_type;
+      if (filters.log_source) params.log_source = filters.log_source;
       if (filters.protocol) params.protocol = filters.protocol;
       if (filters.port) params.port = filters.port;
       if (filters.search) params.search = filters.search;
 
       const data = await getLogs(params);
-      setLogs(data.logs || []);
+      // Normalize backend id field: FastAPI/Pydantic may return either "id" or "_id"
+      const normalizedLogs = (data.logs || []).map((log) => ({
+        ...log,
+        id: log.id ?? log._id,
+      }));
+      setLogs(normalizedLogs);
       setPagination({
         page: data.page || 1,
         page_size: data.page_size || 50,
@@ -94,16 +105,22 @@ const Logs = () => {
       if (exportMenuRef.current && !exportMenuRef.current.contains(event.target)) {
         setShowExportMenu(false);
       }
+      if (selectedExportMenuRef.current && !selectedExportMenuRef.current.contains(event.target)) {
+        setShowSelectedExportMenu(false);
+      }
     };
 
     if (showExportMenu) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    if (showSelectedExportMenu) {
       document.addEventListener('mousedown', handleClickOutside);
     }
 
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
     };
-  }, [showExportMenu]);
+  }, [showExportMenu, showSelectedExportMenu]);
 
   const handleFilterChange = (key, value) => {
     setFilters((prev) => ({ ...prev, [key]: value }));
@@ -115,6 +132,8 @@ const Logs = () => {
       end_date: null,
       source_ip: '',
       severity: '',
+      event_type: '',
+      log_source: '',
       protocol: '',
       port: '',
       search: '',
@@ -149,10 +168,21 @@ const Logs = () => {
 
   const handleSelectAll = (checked) => {
     if (checked) {
-      setSelectedLogs(logs.map((log) => log.id || log._id));
+      setSelectedLogs(logs.map((log) => log.id).filter(Boolean));
     } else {
       setSelectedLogs([]);
     }
+  };
+
+  const downloadBlob = (blob, filename) => {
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
   };
 
   const handleExport = async (format) => {
@@ -162,6 +192,8 @@ const Logs = () => {
       if (filters.end_date) params.end_date = formatDateForAPI(new Date(filters.end_date));
       if (filters.source_ip) params.source_ip = filters.source_ip;
       if (filters.severity) params.severity = filters.severity;
+      if (filters.event_type) params.event_type = filters.event_type;
+      if (filters.log_source) params.log_source = filters.log_source;
       if (filters.protocol) params.protocol = filters.protocol;
       if (filters.port) params.port = filters.port;
       if (filters.search) params.search = filters.search;
@@ -172,25 +204,89 @@ const Logs = () => {
       if (format === 'csv') {
         blob = await exportLogsCSV(params);
         filename = `logs_export_${new Date().toISOString().split('T')[0]}.csv`;
-      } else {
+      } else if (format === 'json') {
         blob = await exportLogsJSON(params);
         filename = `logs_export_${new Date().toISOString().split('T')[0]}.json`;
+      } else {
+        blob = await exportLogsPDF(params);
+        filename = `logs_export_${new Date().toISOString().split('T')[0]}.pdf`;
       }
 
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
+      downloadBlob(blob, filename);
     } catch (err) {
       console.error('Error exporting logs:', err);
       alert('Failed to export logs. Please try again.');
     }
   };
 
+  const exportSelectedLogs = (format) => {
+    const selected = logs.filter((log) => selectedLogs.includes(log.id));
+    if (selected.length === 0) {
+      alert('No logs selected');
+      return;
+    }
+
+    const dateStr = new Date().toISOString().split('T')[0];
+
+    if (format === 'json') {
+      const json = JSON.stringify(selected, null, 2);
+      const blob = new Blob([json], { type: 'application/json' });
+      downloadBlob(blob, `selected_logs_${selected.length}_${dateStr}.json`);
+      return;
+    }
+
+    // CSV export (client-side) for selected rows
+    const csvEscape = (v) => {
+      if (v === null || v === undefined) return '""';
+      const s = String(v);
+      return `"${s.replace(/"/g, '""')}"`;
+    };
+
+    const headers = [
+      'ID',
+      'Timestamp',
+      'Source IP',
+      'Destination Port',
+      'Protocol',
+      'Log Source',
+      'Event Type',
+      'Severity',
+      'Username',
+      'Raw Log',
+    ];
+    const rows = selected.map((log) => [
+      log.id,
+      log.timestamp,
+      log.source_ip,
+      log.destination_port,
+      log.protocol,
+      log.log_source,
+      log.event_type,
+      log.severity,
+      log.username,
+      log.raw_log,
+    ]);
+
+    const csv = [headers, ...rows].map((r) => r.map(csvEscape).join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    downloadBlob(blob, `selected_logs_${selected.length}_${dateStr}.csv`);
+  };
+
+  const exportSelectedLogsPDFHandler = async () => {
+    const selectedIds = selectedLogs.filter(Boolean);
+    if (selectedIds.length === 0) {
+      alert('No logs selected');
+      return;
+    }
+    try {
+      const blob = await exportSelectedLogsPDF(selectedIds);
+      const dateStr = new Date().toISOString().split('T')[0];
+      downloadBlob(blob, `selected_logs_${selectedIds.length}_${dateStr}.pdf`);
+    } catch (err) {
+      console.error('Error exporting selected logs to PDF:', err);
+      alert('Failed to export selected logs to PDF. Please try again.');
+    }
+  };
   return (
     <div className="min-h-screen bg-gray-50 p-6">
       <div className="max-w-7xl mx-auto">
@@ -247,6 +343,17 @@ const Logs = () => {
                     <FiFile className="w-4 h-4" />
                     Export as JSON
                   </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleExport('pdf');
+                      setShowExportMenu(false);
+                    }}
+                    className="w-full text-left px-4 py-2 hover:bg-gray-100 flex items-center gap-2 text-sm transition-colors"
+                  >
+                    <FiFileMinus className="w-4 h-4" />
+                    Export as PDF
+                  </button>
                 </div>
               )}
             </div>
@@ -266,12 +373,66 @@ const Logs = () => {
             <span className="text-sm text-blue-800">
               {selectedLogs.length} log(s) selected
             </span>
-            <button
-              onClick={() => setSelectedLogs([])}
-              className="text-sm text-blue-600 hover:text-blue-800"
-            >
-              Clear Selection
-            </button>
+            <div className="flex items-center gap-3">
+              <div className="relative" ref={selectedExportMenuRef}>
+                <button
+                  className="px-3 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 flex items-center gap-2 text-sm"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setShowSelectedExportMenu(!showSelectedExportMenu);
+                  }}
+                >
+                  <FiDownload className="w-4 h-4" />
+                  Export Selected
+                </button>
+                {showSelectedExportMenu && (
+                  <div
+                    className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg z-50 border border-gray-200"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        exportSelectedLogs('csv');
+                        setShowSelectedExportMenu(false);
+                      }}
+                      className="w-full text-left px-4 py-2 hover:bg-gray-100 flex items-center gap-2 text-sm transition-colors"
+                    >
+                      <FiFileText className="w-4 h-4" />
+                      Export Selected CSV
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        exportSelectedLogs('json');
+                        setShowSelectedExportMenu(false);
+                      }}
+                      className="w-full text-left px-4 py-2 hover:bg-gray-100 flex items-center gap-2 text-sm transition-colors"
+                    >
+                      <FiFile className="w-4 h-4" />
+                      Export Selected JSON
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        exportSelectedLogsPDFHandler();
+                        setShowSelectedExportMenu(false);
+                      }}
+                      className="w-full text-left px-4 py-2 hover:bg-gray-100 flex items-center gap-2 text-sm transition-colors"
+                    >
+                      <FiFileMinus className="w-4 h-4" />
+                      Export Selected PDF
+                    </button>
+                  </div>
+                )}
+              </div>
+              <button
+                onClick={() => setSelectedLogs([])}
+                className="text-sm text-blue-600 hover:text-blue-800"
+              >
+                Clear Selection
+              </button>
+            </div>
           </div>
         )}
 

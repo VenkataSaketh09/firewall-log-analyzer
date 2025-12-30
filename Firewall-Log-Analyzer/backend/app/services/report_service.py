@@ -5,6 +5,7 @@ from app.services.brute_force_detection import detect_brute_force
 from app.services.ddos_detection import detect_ddos
 from app.services.port_scan_detection import detect_port_scan
 from app.services.virustotal_service import get_multiple_ip_reputations
+from app.db.mongo import logs_collection
 
 
 def generate_daily_report(date: Optional[datetime] = None) -> Dict:
@@ -46,7 +47,15 @@ def generate_weekly_report(start_date: Optional[datetime] = None) -> Dict:
     return _generate_report(start_date, end_date, "WEEKLY")
 
 
-def generate_custom_report(start_date: datetime, end_date: datetime) -> Dict:
+def generate_custom_report(
+    start_date: datetime,
+    end_date: datetime,
+    include_charts: bool = True,
+    include_summary: bool = True,
+    include_threats: bool = True,
+    include_logs: bool = False,
+    detailed_logs_limit: int = 500,
+) -> Dict:
     """
     Generate a custom date range security report.
     
@@ -57,202 +66,230 @@ def generate_custom_report(start_date: datetime, end_date: datetime) -> Dict:
     Returns:
         Dictionary containing comprehensive security report
     """
-    return _generate_report(start_date, end_date, "CUSTOM")
+    return _generate_report(
+        start_date,
+        end_date,
+        "CUSTOM",
+        include_charts=include_charts,
+        include_summary=include_summary,
+        include_threats=include_threats,
+        include_logs=include_logs,
+        detailed_logs_limit=detailed_logs_limit,
+    )
 
 
-def _generate_report(start_date: datetime, end_date: datetime, report_type: str) -> Dict:
+def _generate_report(
+    start_date: datetime,
+    end_date: datetime,
+    report_type: str,
+    include_charts: bool = True,
+    include_summary: bool = True,
+    include_threats: bool = True,
+    include_logs: bool = False,
+    detailed_logs_limit: int = 500,
+) -> Dict:
     """
     Internal function to generate comprehensive security reports.
     """
-    # Get log statistics
-    log_stats = get_statistics(start_date=start_date, end_date=end_date)
-    
-    # Get brute force detections
-    brute_force_detections = detect_brute_force(
-        time_window_minutes=15,
-        threshold=5,
-        start_date=start_date,
-        end_date=end_date
-    )
-    
-    # Get DDoS detections
-    ddos_detections = detect_ddos(
-        time_window_seconds=60,
-        single_ip_threshold=100,
-        distributed_ip_count=10,
-        distributed_request_threshold=500,
-        start_date=start_date,
-        end_date=end_date
-    )
+    # Only compute what we might return; this makes include_* options meaningful and reduces work.
+    needs_log_stats = include_charts or include_summary or include_logs
+    needs_threats = include_threats or include_summary
 
-    # Get port scan detections
-    port_scan_detections = detect_port_scan(
-        time_window_minutes=10,
-        unique_ports_threshold=10,
-        min_total_attempts=20,
-        start_date=start_date,
-        end_date=end_date
-    )
-    
-    # Calculate threat summary
-    threat_summary = {
-        "total_brute_force_attacks": len(brute_force_detections),
-        "total_ddos_attacks": len(ddos_detections),
-        "total_port_scan_attacks": len(port_scan_detections),
-        "total_threats": len(brute_force_detections) + len(ddos_detections) + len(port_scan_detections),
-        "critical_threats": 0,
-        "high_threats": 0,
-        "medium_threats": 0,
-        "low_threats": 0
-    }
-    
-    # Count threats by severity
-    for detection in brute_force_detections:
-        severity = detection.get("severity", "LOW")
-        if severity == "CRITICAL":
-            threat_summary["critical_threats"] += 1
-        elif severity == "HIGH":
-            threat_summary["high_threats"] += 1
-        elif severity == "MEDIUM":
-            threat_summary["medium_threats"] += 1
-        else:
-            threat_summary["low_threats"] += 1
-    
-    for detection in ddos_detections:
-        severity = detection.get("severity", "LOW")
-        if severity == "CRITICAL":
-            threat_summary["critical_threats"] += 1
-        elif severity == "HIGH":
-            threat_summary["high_threats"] += 1
-        elif severity == "MEDIUM":
-            threat_summary["medium_threats"] += 1
-        else:
-            threat_summary["low_threats"] += 1
+    log_stats = get_statistics(start_date=start_date, end_date=end_date) if needs_log_stats else {}
 
-    for detection in port_scan_detections:
-        severity = detection.get("severity", "LOW")
-        if severity == "CRITICAL":
-            threat_summary["critical_threats"] += 1
-        elif severity == "HIGH":
-            threat_summary["high_threats"] += 1
-        elif severity == "MEDIUM":
-            threat_summary["medium_threats"] += 1
-        else:
-            threat_summary["low_threats"] += 1
+    brute_force_detections = []
+    ddos_detections = []
+    port_scan_detections = []
+    if needs_threats:
+        brute_force_detections = detect_brute_force(
+            time_window_minutes=15,
+            threshold=5,
+            start_date=start_date,
+            end_date=end_date
+        )
+        ddos_detections = detect_ddos(
+            time_window_seconds=60,
+            single_ip_threshold=100,
+            distributed_ip_count=10,
+            distributed_request_threshold=500,
+            start_date=start_date,
+            end_date=end_date
+        )
+        port_scan_detections = detect_port_scan(
+            time_window_minutes=10,
+            unique_ports_threshold=10,
+            min_total_attempts=20,
+            start_date=start_date,
+            end_date=end_date
+        )
     
-    # Get top threat sources (from brute force and DDoS)
-    threat_sources = {}
-    
-    for detection in brute_force_detections:
-        ip = detection.get("source_ip")
-        if ip:
-            if ip not in threat_sources:
-                threat_sources[ip] = {
-                    "ip": ip,
-                    "brute_force_attacks": 0,
-                    "ddos_attacks": 0,
-                    "total_attempts": 0,
-                    "severity": "LOW"
-                }
-            threat_sources[ip]["brute_force_attacks"] += 1
-            threat_sources[ip]["total_attempts"] += detection.get("total_attempts", 0)
-            # Update severity to highest
-            current_sev = threat_sources[ip]["severity"]
-            det_sev = detection.get("severity", "LOW")
-            if _severity_level(det_sev) > _severity_level(current_sev):
-                threat_sources[ip]["severity"] = det_sev
-    
-    for detection in ddos_detections:
-        source_ips = detection.get("source_ips", [])
-        for ip in source_ips:
-            if ip not in threat_sources:
-                threat_sources[ip] = {
-                    "ip": ip,
-                    "brute_force_attacks": 0,
-                    "ddos_attacks": 0,
-                    "total_attempts": 0,
-                    "severity": "LOW"
-                }
-            threat_sources[ip]["ddos_attacks"] += 1
-            threat_sources[ip]["total_attempts"] += detection.get("total_requests", 0)
-            # Update severity to highest
-            current_sev = threat_sources[ip]["severity"]
-            det_sev = detection.get("severity", "LOW")
-            if _severity_level(det_sev) > _severity_level(current_sev):
-                threat_sources[ip]["severity"] = det_sev
+    threat_summary = None
+    if include_summary:
+        # Calculate threat summary (only needed for executive summary / score)
+        threat_summary = {
+            "total_brute_force_attacks": len(brute_force_detections),
+            "total_ddos_attacks": len(ddos_detections),
+            "total_port_scan_attacks": len(port_scan_detections),
+            "total_threats": len(brute_force_detections) + len(ddos_detections) + len(port_scan_detections),
+            "critical_threats": 0,
+            "high_threats": 0,
+            "medium_threats": 0,
+            "low_threats": 0
+        }
 
-    for detection in port_scan_detections:
-        ip = detection.get("source_ip")
-        if ip:
-            if ip not in threat_sources:
-                threat_sources[ip] = {
-                    "ip": ip,
-                    "brute_force_attacks": 0,
-                    "ddos_attacks": 0,
-                    "total_attempts": 0,
-                    "severity": "LOW"
-                }
-            # treat port scan as "attempts" signal
-            threat_sources[ip]["total_attempts"] += detection.get("total_attempts", 0)
-            current_sev = threat_sources[ip]["severity"]
-            det_sev = detection.get("severity", "LOW")
-            if _severity_level(det_sev) > _severity_level(current_sev):
-                threat_sources[ip]["severity"] = det_sev
+        # Count threats by severity
+        for detection in brute_force_detections:
+            severity = detection.get("severity", "LOW")
+            if severity == "CRITICAL":
+                threat_summary["critical_threats"] += 1
+            elif severity == "HIGH":
+                threat_summary["high_threats"] += 1
+            elif severity == "MEDIUM":
+                threat_summary["medium_threats"] += 1
+            else:
+                threat_summary["low_threats"] += 1
+
+        for detection in ddos_detections:
+            severity = detection.get("severity", "LOW")
+            if severity == "CRITICAL":
+                threat_summary["critical_threats"] += 1
+            elif severity == "HIGH":
+                threat_summary["high_threats"] += 1
+            elif severity == "MEDIUM":
+                threat_summary["medium_threats"] += 1
+            else:
+                threat_summary["low_threats"] += 1
+
+        for detection in port_scan_detections:
+            severity = detection.get("severity", "LOW")
+            if severity == "CRITICAL":
+                threat_summary["critical_threats"] += 1
+            elif severity == "HIGH":
+                threat_summary["high_threats"] += 1
+            elif severity == "MEDIUM":
+                threat_summary["medium_threats"] += 1
+            else:
+                threat_summary["low_threats"] += 1
     
-    # Sort threat sources by total attempts
-    top_threat_sources = sorted(
-        list(threat_sources.values()),
-        key=lambda x: x["total_attempts"],
-        reverse=True
-    )[:20]
+    top_threat_sources = []
+    malicious_ip_analysis = None
+    if include_threats:
+        # Get top threat sources (from brute force, DDoS, port scan)
+        threat_sources = {}
+
+        for detection in brute_force_detections:
+            ip = detection.get("source_ip")
+            if ip:
+                if ip not in threat_sources:
+                    threat_sources[ip] = {
+                        "ip": ip,
+                        "brute_force_attacks": 0,
+                        "ddos_attacks": 0,
+                        "total_attempts": 0,
+                        "severity": "LOW"
+                    }
+                threat_sources[ip]["brute_force_attacks"] += 1
+                threat_sources[ip]["total_attempts"] += detection.get("total_attempts", 0)
+                current_sev = threat_sources[ip]["severity"]
+                det_sev = detection.get("severity", "LOW")
+                if _severity_level(det_sev) > _severity_level(current_sev):
+                    threat_sources[ip]["severity"] = det_sev
+
+        for detection in ddos_detections:
+            source_ips = detection.get("source_ips", [])
+            for ip in source_ips:
+                if ip not in threat_sources:
+                    threat_sources[ip] = {
+                        "ip": ip,
+                        "brute_force_attacks": 0,
+                        "ddos_attacks": 0,
+                        "total_attempts": 0,
+                        "severity": "LOW"
+                    }
+                threat_sources[ip]["ddos_attacks"] += 1
+                threat_sources[ip]["total_attempts"] += detection.get("total_requests", 0)
+                current_sev = threat_sources[ip]["severity"]
+                det_sev = detection.get("severity", "LOW")
+                if _severity_level(det_sev) > _severity_level(current_sev):
+                    threat_sources[ip]["severity"] = det_sev
+
+        for detection in port_scan_detections:
+            ip = detection.get("source_ip")
+            if ip:
+                if ip not in threat_sources:
+                    threat_sources[ip] = {
+                        "ip": ip,
+                        "brute_force_attacks": 0,
+                        "ddos_attacks": 0,
+                        "total_attempts": 0,
+                        "severity": "LOW"
+                    }
+                threat_sources[ip]["total_attempts"] += detection.get("total_attempts", 0)
+                current_sev = threat_sources[ip]["severity"]
+                det_sev = detection.get("severity", "LOW")
+                if _severity_level(det_sev) > _severity_level(current_sev):
+                    threat_sources[ip]["severity"] = det_sev
+
+        top_threat_sources = sorted(
+            list(threat_sources.values()),
+            key=lambda x: x["total_attempts"],
+            reverse=True
+        )[:20]
+
+        malicious_ip_analysis = _analyze_malicious_ips(top_threat_sources)
     
-    # Get VirusTotal reputation for top threat sources
-    malicious_ip_analysis = _analyze_malicious_ips(top_threat_sources)
+    security_score = None
+    security_status = None
+    if include_summary and threat_summary is not None:
+        # Calculate security score (0-100, higher is better)
+        security_score = 100
+        security_score -= min(threat_summary["critical_threats"] * 20, 80)
+        security_score -= min(threat_summary["high_threats"] * 10, 60)
+        security_score -= min(threat_summary["medium_threats"] * 5, 40)
+        security_score -= min(threat_summary["low_threats"] * 1, 20)
+        security_score = max(security_score, 0)
+
+        # Determine security status
+        if security_score >= 80:
+            security_status = "SECURE"
+        elif security_score >= 60:
+            security_status = "MODERATE"
+        elif security_score >= 40:
+            security_status = "WARNING"
+        else:
+            security_status = "CRITICAL"
     
-    # Calculate security score (0-100, higher is better)
-    # Base score starts at 100, deduct points for threats
-    security_score = 100
-    security_score -= min(threat_summary["critical_threats"] * 20, 80)
-    security_score -= min(threat_summary["high_threats"] * 10, 60)
-    security_score -= min(threat_summary["medium_threats"] * 5, 40)
-    security_score -= min(threat_summary["low_threats"] * 1, 20)
-    security_score = max(security_score, 0)
-    
-    # Determine security status
-    if security_score >= 80:
-        security_status = "SECURE"
-    elif security_score >= 60:
-        security_status = "MODERATE"
-    elif security_score >= 40:
-        security_status = "WARNING"
-    else:
-        security_status = "CRITICAL"
-    
-    # Get daily/hourly breakdown for time-based analysis
-    time_breakdown = _get_time_breakdown(start_date, end_date, report_type)
-    
-    return {
+    time_breakdown = _get_time_breakdown(start_date, end_date, report_type) if include_charts else None
+
+    report_doc: Dict = {
         "report_type": report_type,
         "report_date": datetime.utcnow().isoformat(),
         "period": {
             "start": start_date.isoformat(),
             "end": end_date.isoformat()
-        },
-        "summary": {
+        }
+    }
+
+    if include_summary and threat_summary is not None:
+        report_doc["summary"] = {
             "total_logs": log_stats.get("total_logs", 0),
-            "security_score": security_score,
-            "security_status": security_status,
+            "security_score": security_score or 0,
+            "security_status": security_status or "UNKNOWN",
             "threat_summary": threat_summary
-        },
-        "log_statistics": {
+        }
+
+    if include_charts:
+        report_doc["log_statistics"] = {
             "severity_distribution": log_stats.get("severity_counts", {}),
             "event_type_distribution": log_stats.get("event_type_counts", {}),
             "protocol_distribution": log_stats.get("protocol_counts", {}),
-            "top_source_ips": log_stats.get("top_source_ips", [])[:10],
-            "top_ports": log_stats.get("top_ports", [])[:10],
-            "time_breakdown": time_breakdown
-        },
-        "threat_detections": {
+            "top_source_ips": (log_stats.get("top_source_ips", []) or [])[:10],
+            "top_ports": (log_stats.get("top_ports", []) or [])[:10],
+            "time_breakdown": time_breakdown or []
+        }
+
+    if include_threats:
+        report_doc["threat_detections"] = {
             "brute_force_attacks": [
                 {
                     "source_ip": d.get("source_ip"),
@@ -288,13 +325,57 @@ def _generate_report(start_date: datetime, end_date: datetime, report_type: str)
                 }
                 for d in port_scan_detections
             ]
-        },
-        "top_threat_sources": top_threat_sources,
-        "malicious_ip_analysis": malicious_ip_analysis,
-        "recommendations": _generate_recommendations(
+        }
+        report_doc["top_threat_sources"] = top_threat_sources
+        report_doc["malicious_ip_analysis"] = malicious_ip_analysis
+
+    if include_summary and threat_summary is not None:
+        report_doc["recommendations"] = _generate_recommendations(
             threat_summary, brute_force_detections, ddos_detections, log_stats, malicious_ip_analysis
         )
-    }
+
+    if include_logs:
+        # Include raw logs (truncated) to support "Include Detailed Logs"
+        cursor = (
+            logs_collection.find(
+                {"timestamp": {"$gte": start_date, "$lte": end_date}},
+                {
+                    "_id": 1,
+                    "timestamp": 1,
+                    "source_ip": 1,
+                    "destination_ip": 1,
+                    "destination_port": 1,
+                    "protocol": 1,
+                    "log_source": 1,
+                    "event_type": 1,
+                    "severity": 1,
+                    "username": 1,
+                    "raw_log": 1,
+                },
+            )
+            .sort("timestamp", -1)
+            .limit(max(0, int(detailed_logs_limit)))
+        )
+        detailed_logs = []
+        for log in cursor:
+            detailed_logs.append(
+                {
+                    "id": str(log.get("_id")),
+                    "timestamp": log.get("timestamp").isoformat() if log.get("timestamp") else None,
+                    "source_ip": log.get("source_ip"),
+                    "destination_ip": log.get("destination_ip"),
+                    "destination_port": log.get("destination_port"),
+                    "protocol": log.get("protocol"),
+                    "log_source": log.get("log_source"),
+                    "event_type": log.get("event_type"),
+                    "severity": log.get("severity"),
+                    "username": log.get("username"),
+                    "raw_log": log.get("raw_log"),
+                }
+            )
+        report_doc["detailed_logs"] = detailed_logs
+
+    return report_doc
 
 
 def _severity_level(severity: str) -> int:

@@ -11,6 +11,8 @@ export const getLogs = async (params = {}) => {
     end_date = null,
     source_ip = null,
     severity = null,
+    event_type = null,
+    log_source = null,
     protocol = null,
     port = null,
     search = null,
@@ -29,6 +31,8 @@ export const getLogs = async (params = {}) => {
   if (end_date) queryParams.end_date = end_date;
   if (source_ip) queryParams.source_ip = source_ip;
   if (severity) queryParams.severity = severity;
+  if (event_type) queryParams.event_type = event_type;
+  if (log_source) queryParams.log_source = log_source;
   if (protocol) queryParams.protocol = protocol;
   if (port) {
     // Convert port to integer and use destination_port parameter name (backend expects integer)
@@ -98,6 +102,37 @@ export const exportLogsJSON = async (params = {}) => {
     params: exportParams,
     responseType: 'blob',
   });
+  return response.data;
+};
+
+/**
+ * Export logs as PDF (color-coded per row)
+ */
+export const exportLogsPDF = async (params = {}) => {
+  const exportParams = { ...params };
+  if (exportParams.port) {
+    const portNum = parseInt(exportParams.port, 10);
+    if (!isNaN(portNum)) {
+      exportParams.destination_port = portNum;
+    }
+    delete exportParams.port;
+  }
+  const response = await api.get('/api/logs/export/pdf', {
+    params: exportParams,
+    responseType: 'blob',
+  });
+  return response.data;
+};
+
+/**
+ * Export specific selected logs as PDF (color-coded per row)
+ */
+export const exportSelectedLogsPDF = async (logIds = []) => {
+  const response = await api.post(
+    '/api/logs/export/pdf',
+    { log_ids: logIds },
+    { responseType: 'blob' }
+  );
   return response.data;
 };
 

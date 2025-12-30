@@ -4,7 +4,7 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsi
 import { SEVERITY_COLORS, SEVERITY_BG_COLORS } from '../../utils/constants';
 import { formatTimestamp } from '../../utils/dateUtils';
 import { formatSeverity, formatIP, formatThreatType } from '../../utils/formatters';
-import { getIPReputation } from '../../services/threatsService';
+import { getIPReputationWithOptions } from '../../services/threatsService';
 
 const ThreatDetailsModal = ({ threat, isOpen, onClose, ipTimelineData = [] }) => {
   const [ipReputation, setIpReputation] = useState(null);
@@ -12,14 +12,29 @@ const ThreatDetailsModal = ({ threat, isOpen, onClose, ipTimelineData = [] }) =>
 
   useEffect(() => {
     if (isOpen && threat?.source_ip) {
-      fetchIPReputation(threat.source_ip);
+      fetchIPReputation(threat.source_ip, { use_cache: true });
     }
   }, [isOpen, threat]);
 
-  const fetchIPReputation = async (ip) => {
+  const isPrivateIp = (ip) => {
+    if (!ip) return false;
+    // Basic RFC1918 + local ranges (good enough for UI hint)
+    if (/^10\./.test(ip)) return true;
+    if (/^192\.168\./.test(ip)) return true;
+    if (/^127\./.test(ip)) return true;
+    // 172.16.0.0 – 172.31.255.255
+    const m = ip.match(/^172\.(\d{1,3})\./);
+    if (m) {
+      const oct = Number(m[1]);
+      if (oct >= 16 && oct <= 31) return true;
+    }
+    return false;
+  };
+
+  const fetchIPReputation = async (ip, options = {}) => {
     try {
       setLoadingReputation(true);
-      const data = await getIPReputation(ip);
+      const data = await getIPReputationWithOptions(ip, options);
       // Backend returns: { ip: string, reputation: VirusTotalReputation | null }
       setIpReputation(data?.reputation || null);
     } catch (err) {
@@ -148,7 +163,7 @@ const ThreatDetailsModal = ({ threat, isOpen, onClose, ipTimelineData = [] }) =>
                   IP Reputation
                 </h3>
                 <button
-                  onClick={() => fetchIPReputation(threat.source_ip)}
+                  onClick={() => fetchIPReputation(threat.source_ip, { use_cache: false })}
                   disabled={loadingReputation}
                   className="text-sm text-blue-600 hover:text-blue-800 flex items-center gap-1"
                 >
@@ -158,6 +173,11 @@ const ThreatDetailsModal = ({ threat, isOpen, onClose, ipTimelineData = [] }) =>
                   Refresh
                 </button>
               </div>
+              {isPrivateIp(threat.source_ip) && (
+                <div className="mb-3 text-xs text-gray-600">
+                  Note: This is a private IP range. VirusTotal typically won’t have country/ISP data for private/internal IPs.
+                </div>
+              )}
               {loadingReputation ? (
                 <div className="text-center py-4">
                   <FiRefreshCw className="w-6 h-6 animate-spin mx-auto text-blue-600" />

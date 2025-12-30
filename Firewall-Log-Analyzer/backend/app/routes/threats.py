@@ -1,6 +1,12 @@
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Literal
+import csv
+import io
+import json
+
 from fastapi import APIRouter, Query, HTTPException, Body
+from fastapi.encoders import jsonable_encoder
+from fastapi.responses import Response, StreamingResponse
 from app.services.brute_force_detection import detect_brute_force, get_brute_force_timeline
 from app.services.ddos_detection import detect_ddos
 from app.services.port_scan_detection import detect_port_scan
@@ -23,6 +29,41 @@ from app.schemas.log_schema import VirusTotalReputation
 
 router = APIRouter(prefix="/api/threats", tags=["threats"])
 
+ThreatExportFormat = Optional[Literal["csv", "json"]]
+
+
+def _normalize_severity_filter(severity: Optional[str]) -> Optional[str]:
+    if not severity:
+        return None
+    s = severity.strip().upper()
+    return s or None
+
+
+def _filter_by_severity(items, severity: Optional[str]):
+    sev = _normalize_severity_filter(severity)
+    if not sev:
+        return items
+    return [i for i in items if (getattr(i, "severity", None) or "").upper() == sev]
+
+
+def _csv_download(csv_text: str, filename: str) -> Response:
+    # Use UTF-8 with BOM for Excel-friendliness.
+    payload = ("\ufeff" + csv_text).encode("utf-8")
+    return Response(
+        content=payload,
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+def _json_download(data, filename: str) -> Response:
+    payload = json.dumps(jsonable_encoder(data), indent=2).encode("utf-8")
+    return Response(
+        content=payload,
+        media_type="application/json; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
 
 @router.get("/brute-force", response_model=BruteForceDetectionsResponse)
 def get_brute_force_detections(
@@ -31,7 +72,9 @@ def get_brute_force_detections(
     start_date: Optional[datetime] = Query(None, description="Start date for analysis (ISO format)"),
     end_date: Optional[datetime] = Query(None, description="End date for analysis (ISO format)"),
     source_ip: Optional[str] = Query(None, description="Optional specific IP to check"),
-    include_reputation: bool = Query(False, description="Include VirusTotal IP reputation data")
+    severity: Optional[str] = Query(None, description="Optional severity filter (CRITICAL/HIGH/MEDIUM/LOW)"),
+    include_reputation: bool = Query(False, description="Include VirusTotal IP reputation data"),
+    format: ThreatExportFormat = Query(None, description="Optional export format (csv/json)")
 ):
     """
     Detect brute force attacks based on failed login attempts.
@@ -103,7 +146,9 @@ def get_brute_force_detections(
         if start_date is None:
             start_date = end_date.replace(hour=0, minute=0, second=0, microsecond=0)
         
-        return BruteForceDetectionsResponse(
+        detection_models = _filter_by_severity(detection_models, severity)
+
+        response_model = BruteForceDetectionsResponse(
             detections=detection_models,
             total_detections=len(detection_models),
             time_window_minutes=time_window_minutes,
@@ -113,6 +158,42 @@ def get_brute_force_detections(
                 "end": end_date.isoformat()
             }
         )
+        if format == "json":
+            return _json_download(
+                response_model.model_dump(),
+                filename=f"brute_force_threats_{datetime.utcnow().date().isoformat()}.json",
+            )
+        if format == "csv":
+            output = io.StringIO()
+            writer = csv.DictWriter(
+                output,
+                fieldnames=[
+                    "source_ip",
+                    "severity",
+                    "total_attempts",
+                    "unique_usernames_attempted",
+                    "first_attempt",
+                    "last_attempt",
+                ],
+            )
+            writer.writeheader()
+            for d in detection_models:
+                writer.writerow(
+                    {
+                        "source_ip": d.source_ip,
+                        "severity": d.severity,
+                        "total_attempts": d.total_attempts,
+                        "unique_usernames_attempted": d.unique_usernames_attempted,
+                        "first_attempt": d.first_attempt,
+                        "last_attempt": d.last_attempt,
+                    }
+                )
+            return _csv_download(
+                output.getvalue(),
+                filename=f"brute_force_threats_{datetime.utcnow().date().isoformat()}.csv",
+            )
+
+        return response_model
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error detecting brute force attacks: {str(e)}")
 
@@ -241,7 +322,9 @@ def get_ddos_detections(
     end_date: Optional[datetime] = Query(None, description="End date for analysis (ISO format)"),
     destination_port: Optional[int] = Query(None, description="Optional destination port to filter by"),
     protocol: Optional[str] = Query(None, description="Optional protocol to filter by (TCP, UDP, etc.)"),
-    include_reputation: bool = Query(False, description="Include VirusTotal IP reputation data")
+    severity: Optional[str] = Query(None, description="Optional severity filter (CRITICAL/HIGH/MEDIUM/LOW)"),
+    include_reputation: bool = Query(False, description="Include VirusTotal IP reputation data"),
+    format: ThreatExportFormat = Query(None, description="Optional export format (csv/json)")
 ):
     """
     Detect DDoS/Flood attacks based on traffic patterns.
@@ -333,7 +416,9 @@ def get_ddos_detections(
         if start_date is None:
             start_date = end_date.replace(hour=0, minute=0, second=0, microsecond=0)
         
-        return DDoSDetectionsResponse(
+        detection_models = _filter_by_severity(detection_models, severity)
+
+        response_model = DDoSDetectionsResponse(
             detections=detection_models,
             total_detections=len(detection_models),
             time_window_seconds=time_window_seconds,
@@ -345,6 +430,50 @@ def get_ddos_detections(
                 "end": end_date.isoformat()
             }
         )
+        if format == "json":
+            return _json_download(
+                response_model.model_dump(),
+                filename=f"ddos_threats_{datetime.utcnow().date().isoformat()}.json",
+            )
+        if format == "csv":
+            output = io.StringIO()
+            writer = csv.DictWriter(
+                output,
+                fieldnames=[
+                    "attack_type",
+                    "severity",
+                    "total_requests",
+                    "peak_request_rate",
+                    "avg_request_rate",
+                    "source_ip_count",
+                    "target_port",
+                    "target_protocol",
+                    "first_request",
+                    "last_request",
+                ],
+            )
+            writer.writeheader()
+            for d in detection_models:
+                writer.writerow(
+                    {
+                        "attack_type": d.attack_type,
+                        "severity": d.severity,
+                        "total_requests": d.total_requests,
+                        "peak_request_rate": d.peak_request_rate,
+                        "avg_request_rate": d.avg_request_rate,
+                        "source_ip_count": d.source_ip_count,
+                        "target_port": d.target_port,
+                        "target_protocol": d.target_protocol,
+                        "first_request": d.first_request,
+                        "last_request": d.last_request,
+                    }
+                )
+            return _csv_download(
+                output.getvalue(),
+                filename=f"ddos_threats_{datetime.utcnow().date().isoformat()}.csv",
+            )
+
+        return response_model
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error detecting DDoS/flood attacks: {str(e)}")
 
@@ -358,7 +487,9 @@ def get_port_scan_detections(
     end_date: Optional[datetime] = Query(None, description="End date for analysis (ISO format)"),
     source_ip: Optional[str] = Query(None, description="Optional specific IP to check"),
     protocol: Optional[str] = Query(None, description="Optional protocol filter (TCP/UDP)"),
-    include_reputation: bool = Query(False, description="Include VirusTotal IP reputation data")
+    severity: Optional[str] = Query(None, description="Optional severity filter (CRITICAL/HIGH/MEDIUM/LOW)"),
+    include_reputation: bool = Query(False, description="Include VirusTotal IP reputation data"),
+    format: ThreatExportFormat = Query(None, description="Optional export format (csv/json)")
 ):
     """
     Detect port scanning based on a single source IP probing many destination ports
@@ -425,7 +556,9 @@ def get_port_scan_detections(
         if start_date is None:
             start_date = end_date.replace(hour=0, minute=0, second=0, microsecond=0)
 
-        return PortScanDetectionsResponse(
+        detection_models = _filter_by_severity(detection_models, severity)
+
+        response_model = PortScanDetectionsResponse(
             detections=detection_models,
             total_detections=len(detection_models),
             time_window_minutes=time_window_minutes,
@@ -433,6 +566,42 @@ def get_port_scan_detections(
             min_total_attempts=min_total_attempts,
             time_range={"start": start_date.isoformat(), "end": end_date.isoformat()}
         )
+        if format == "json":
+            return _json_download(
+                response_model.model_dump(),
+                filename=f"port_scan_threats_{datetime.utcnow().date().isoformat()}.json",
+            )
+        if format == "csv":
+            output = io.StringIO()
+            writer = csv.DictWriter(
+                output,
+                fieldnames=[
+                    "source_ip",
+                    "severity",
+                    "total_attempts",
+                    "unique_ports_attempted",
+                    "first_attempt",
+                    "last_attempt",
+                ],
+            )
+            writer.writeheader()
+            for d in detection_models:
+                writer.writerow(
+                    {
+                        "source_ip": d.source_ip,
+                        "severity": d.severity,
+                        "total_attempts": d.total_attempts,
+                        "unique_ports_attempted": d.unique_ports_attempted,
+                        "first_attempt": d.first_attempt,
+                        "last_attempt": d.last_attempt,
+                    }
+                )
+            return _csv_download(
+                output.getvalue(),
+                filename=f"port_scan_threats_{datetime.utcnow().date().isoformat()}.csv",
+            )
+
+        return response_model
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error detecting port scans: {str(e)}")
 
