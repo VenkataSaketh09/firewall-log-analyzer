@@ -14,6 +14,7 @@ import ThreatCard from '../components/threats/ThreatCard';
 import ThreatsTable from '../components/threats/ThreatsTable';
 import ThreatDetailsModal from '../components/threats/ThreatDetailsModal';
 import dayjs from 'dayjs';
+import { getMLStatus } from '../services/mlService';
 
 const Threats = () => {
   const [activeTab, setActiveTab] = useState('brute-force');
@@ -25,6 +26,7 @@ const Threats = () => {
   const [viewMode, setViewMode] = useState('card'); // 'card' or 'table'
   const [ipTimelineData, setIpTimelineData] = useState([]);
   const [timelineLoading, setTimelineLoading] = useState(false);
+  const [mlStatus, setMlStatus] = useState(null);
   const [filters, setFilters] = useState({
     start_date: null,
     end_date: null,
@@ -50,6 +52,7 @@ const Threats = () => {
     if (tabId === 'brute-force') {
       return detections.map((d) => {
         const timestamp = toIso(d.last_attempt || d.first_attempt);
+        const mlRisk = d?.ml_risk_score ?? null;
         return {
           id: d.id || `brute-force-${d.source_ip || 'unknown'}-${timestamp || 'na'}`,
           timestamp,
@@ -57,6 +60,11 @@ const Threats = () => {
           source_ip: d.source_ip,
           severity: d.severity,
           attempt_count: d.total_attempts ?? null,
+          ml_risk_score: mlRisk,
+          ml_anomaly_score: d?.ml_anomaly_score ?? null,
+          ml_predicted_label: d?.ml_predicted_label ?? null,
+          ml_confidence: d?.ml_confidence ?? null,
+          ml_reasoning: d?.ml_reasoning ?? null,
           description:
             d.total_attempts != null
               ? `Potential brute force attack: ${d.total_attempts} failed attempts`
@@ -77,6 +85,11 @@ const Threats = () => {
           source_ip: primaryIp,
           severity: d.severity,
           attempt_count: d.total_requests ?? null,
+          ml_risk_score: d?.ml_risk_score ?? null,
+          ml_anomaly_score: d?.ml_anomaly_score ?? null,
+          ml_predicted_label: d?.ml_predicted_label ?? null,
+          ml_confidence: d?.ml_confidence ?? null,
+          ml_reasoning: d?.ml_reasoning ?? null,
           description:
             d.attack_type
               ? `Potential DDoS (${d.attack_type}): ${d.total_requests ?? 'unknown'} requests`
@@ -97,6 +110,11 @@ const Threats = () => {
         severity: d.severity,
         attempt_count: d.total_attempts ?? null,
         port: Array.isArray(d.ports_attempted) && d.ports_attempted.length === 1 ? d.ports_attempted[0] : null,
+        ml_risk_score: d?.ml_risk_score ?? null,
+        ml_anomaly_score: d?.ml_anomaly_score ?? null,
+        ml_predicted_label: d?.ml_predicted_label ?? null,
+        ml_confidence: d?.ml_confidence ?? null,
+        ml_reasoning: d?.ml_reasoning ?? null,
         description:
           d.unique_ports_attempted != null
             ? `Potential port scan: ${d.unique_ports_attempted} unique ports`
@@ -137,6 +155,18 @@ const Threats = () => {
   useEffect(() => {
     fetchThreats();
   }, [activeTab]);
+
+  useEffect(() => {
+    // best-effort status fetch (don’t block page if ML is down)
+    (async () => {
+      try {
+        const s = await getMLStatus();
+        setMlStatus(s?.ml || null);
+      } catch (e) {
+        setMlStatus({ enabled: false, available: false, last_error: 'ML status unavailable' });
+      }
+    })();
+  }, []);
 
   // Debounce filter changes
   useEffect(() => {
@@ -318,6 +348,27 @@ const Threats = () => {
             ))}
           </nav>
         </div>
+
+        {/* ML Status */}
+        {mlStatus && (
+          <div className="mb-4 p-3 rounded-lg border bg-white">
+            <div className="flex items-center justify-between">
+              <div className="text-sm text-gray-800">
+                <span className="font-semibold">ML:</span>{' '}
+                {mlStatus.available ? (
+                  <span className="text-green-700">Available</span>
+                ) : (
+                  <span className="text-orange-700">Unavailable (rule-based fallback)</span>
+                )}
+              </div>
+              {!mlStatus.available && mlStatus.last_error && (
+                <div className="text-xs text-gray-500 max-w-[60%] truncate" title={mlStatus.last_error}>
+                  {mlStatus.last_error}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Filters */}
         <ThreatFilterPanel

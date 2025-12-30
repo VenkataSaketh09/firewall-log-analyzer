@@ -11,6 +11,7 @@ import { formatDateForAPI } from '../utils/dateUtils';
 import ReportConfigPanel from '../components/reports/ReportConfigPanel';
 import ReportPreview from '../components/reports/ReportPreview';
 import ReportHistory from '../components/reports/ReportHistory';
+import { getMLStatus } from '../services/mlService';
 
 const Reports = () => {
   const [reportType, setReportType] = useState('daily');
@@ -27,12 +28,24 @@ const Reports = () => {
     include_threats: true,
     include_logs: false,
   });
+  const [mlStatus, setMlStatus] = useState(null);
 
   const reportTypes = [
     { id: 'daily', label: 'Daily Report' },
     { id: 'weekly', label: 'Weekly Report' },
     { id: 'custom', label: 'Custom Report' },
   ];
+
+  React.useEffect(() => {
+    (async () => {
+      try {
+        const s = await getMLStatus();
+        setMlStatus(s?.ml || null);
+      } catch (e) {
+        setMlStatus(null);
+      }
+    })();
+  }, []);
   
   const generateReport = async () => {
     try {
@@ -205,6 +218,21 @@ const Reports = () => {
               config={config}
               onConfigChange={handleConfigChange}
             />
+            {mlStatus && (
+              <div className="mt-4 p-4 bg-white rounded-lg shadow border border-gray-100">
+                <div className="text-sm font-semibold text-gray-800 mb-1">ML Status</div>
+                <div className="text-sm text-gray-700">
+                  {mlStatus.available ? (
+                    <span className="text-green-700">Available</span>
+                  ) : (
+                    <span className="text-orange-700">Unavailable (rule fallback)</span>
+                  )}
+                </div>
+                {!mlStatus.available && mlStatus.last_error && (
+                  <div className="mt-2 text-xs text-gray-500 break-words">{mlStatus.last_error}</div>
+                )}
+              </div>
+            )}
             <div className="mt-4 space-y-3">
               <button
                 onClick={generateReport}

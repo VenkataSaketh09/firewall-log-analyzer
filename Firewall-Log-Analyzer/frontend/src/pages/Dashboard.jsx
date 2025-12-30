@@ -25,6 +25,7 @@ import SeverityDistributionChart from '../components/charts/SeverityDistribution
 import EventTypesChart from '../components/charts/EventTypesChart';
 import ProtocolUsageChart from '../components/charts/ProtocolUsageChart';
 import RecentActivityTimeline from '../components/timeline/RecentActivityTimeline';
+import { getMLStatus } from '../services/mlService';
 
 const Dashboard = () => {
   const [dashboardData, setDashboardData] = useState(null);
@@ -34,19 +35,22 @@ const Dashboard = () => {
   const [error, setError] = useState(null);
   const [lastRefresh, setLastRefresh] = useState(new Date());
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [mlStatus, setMlStatus] = useState(null);
 
   const fetchDashboardData = async () => {
     try {
       setIsRefreshing(true);
-      const [dashboard, stats, logs] = await Promise.all([
+      const [dashboard, stats, logs, ml] = await Promise.all([
         getDashboardSummary(),
         getLogsStatsSummary(),
         getRecentLogs(50),
+        getMLStatus().catch(() => null),
       ]);
       
       setDashboardData(dashboard);
       setStatsData(stats);
       setRecentLogs(logs.logs || []);
+      setMlStatus(ml?.ml || null);
       setError(null);
       setLastRefresh(new Date());
     } catch (err) {
@@ -127,6 +131,14 @@ const Dashboard = () => {
             </p>
           </div>
           <div className="flex items-center gap-4">
+            {mlStatus && (
+              <div className="flex items-center gap-2">
+                <div className={`w-3 h-3 rounded-full ${mlStatus.available ? 'bg-green-500' : 'bg-orange-500'}`} />
+                <span className="text-sm text-gray-600">
+                  ML {mlStatus.available ? 'Available' : 'Fallback'}
+                </span>
+              </div>
+            )}
             <div className="flex items-center gap-2">
               <div className={`w-3 h-3 rounded-full ${
                 healthStatus === 'healthy' ? 'bg-green-500' : 'bg-red-500'

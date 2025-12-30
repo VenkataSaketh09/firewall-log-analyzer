@@ -9,6 +9,7 @@ export const getBruteForceThreats = async (params = {}) => {
     end_date = null,
     severity = null,
     source_ip = null,
+    include_ml = true,
   } = params;
 
   const queryParams = {};
@@ -16,6 +17,7 @@ export const getBruteForceThreats = async (params = {}) => {
   if (end_date) queryParams.end_date = end_date;
   if (severity) queryParams.severity = severity;
   if (source_ip) queryParams.source_ip = source_ip;
+  queryParams.include_ml = include_ml;
 
   const response = await api.get('/api/threats/brute-force', { params: queryParams });
   return response.data;
@@ -30,6 +32,7 @@ export const getDDoSThreats = async (params = {}) => {
     end_date = null,
     severity = null,
     source_ip = null,
+    include_ml = true,
   } = params;
 
   const queryParams = {};
@@ -37,6 +40,7 @@ export const getDDoSThreats = async (params = {}) => {
   if (end_date) queryParams.end_date = end_date;
   if (severity) queryParams.severity = severity;
   if (source_ip) queryParams.source_ip = source_ip;
+  queryParams.include_ml = include_ml;
 
   const response = await api.get('/api/threats/ddos', { params: queryParams });
   return response.data;
@@ -51,6 +55,7 @@ export const getPortScanThreats = async (params = {}) => {
     end_date = null,
     severity = null,
     source_ip = null,
+    include_ml = true,
   } = params;
 
   const queryParams = {};
@@ -58,6 +63,7 @@ export const getPortScanThreats = async (params = {}) => {
   if (end_date) queryParams.end_date = end_date;
   if (severity) queryParams.severity = severity;
   if (source_ip) queryParams.source_ip = source_ip;
+  queryParams.include_ml = include_ml;
 
   const response = await api.get('/api/threats/port-scan', { params: queryParams });
   return response.data;
