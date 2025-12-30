@@ -49,7 +49,7 @@ def detect_port_scan(
     logs = list(
         logs_collection.find(
             base_query,
-            {"source_ip": 1, "timestamp": 1, "destination_port": 1, "protocol": 1, "_id": 1}
+            {"source_ip": 1, "timestamp": 1, "destination_port": 1, "protocol": 1, "raw_log": 1, "log_source": 1, "event_type": 1, "_id": 1}
         ).sort("timestamp", DESCENDING)
     )
     if not logs:
@@ -93,6 +93,9 @@ def detect_port_scan(
                         "destination_port": ip_log_list[j].get("destination_port"),
                         "protocol": ip_log_list[j].get("protocol"),
                         "log_id": str(ip_log_list[j]["_id"]),
+                        "raw_log": ip_log_list[j].get("raw_log", ""),
+                        "log_source": ip_log_list[j].get("log_source", "ufw.log"),
+                        "event_type": ip_log_list[j].get("event_type", "PORT_SCAN"),
                     })
                 j += 1
 

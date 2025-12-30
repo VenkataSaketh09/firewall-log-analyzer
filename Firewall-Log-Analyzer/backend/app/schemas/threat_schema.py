@@ -23,6 +23,12 @@ class BruteForceDetection(BaseModel):
     attack_windows: List[AttackWindow]
     severity: str  # CRITICAL, HIGH, MEDIUM, LOW
     virustotal: Optional[VirusTotalReputation] = None
+    # ML enrichment (optional)
+    ml_anomaly_score: Optional[float] = None
+    ml_predicted_label: Optional[str] = None
+    ml_confidence: Optional[float] = None
+    ml_risk_score: Optional[float] = None  # 0-100
+    ml_reasoning: Optional[list[str]] = None
 
     class Config:
         json_encoders = {
@@ -92,6 +98,12 @@ class DDoSDetection(BaseModel):
     top_attacking_ips: Optional[dict] = None  # For distributed attacks: {ip: request_count}
     severity: str  # CRITICAL, HIGH, MEDIUM, LOW
     source_ip_reputations: Optional[dict[str, VirusTotalReputation]] = None  # Map of IP -> reputation
+    # ML enrichment (optional)
+    ml_anomaly_score: Optional[float] = None
+    ml_predicted_label: Optional[str] = None
+    ml_confidence: Optional[float] = None
+    ml_risk_score: Optional[float] = None  # 0-100
+    ml_reasoning: Optional[list[str]] = None
 
     class Config:
         json_encoders = {
@@ -131,6 +143,12 @@ class PortScanDetection(BaseModel):
     attack_windows: List[PortScanAttackWindow]
     severity: str  # CRITICAL, HIGH, MEDIUM, LOW
     virustotal: Optional[VirusTotalReputation] = None
+    # ML enrichment (optional)
+    ml_anomaly_score: Optional[float] = None
+    ml_predicted_label: Optional[str] = None
+    ml_confidence: Optional[float] = None
+    ml_risk_score: Optional[float] = None  # 0-100
+    ml_reasoning: Optional[list[str]] = None
 
     class Config:
         json_encoders = {

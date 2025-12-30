@@ -63,6 +63,8 @@ def detect_ddos(
             "destination_port": 1,
             "protocol": 1,
             "event_type": 1,
+            "log_source": 1,
+            "raw_log": 1,
             "_id": 1
         }
     ).sort("timestamp", DESCENDING))

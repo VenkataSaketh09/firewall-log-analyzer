@@ -65,6 +65,15 @@ def _json_download(data, filename: str) -> Response:
     )
 
 
+def _downgrade_severity(sev: str) -> str:
+    s = (sev or "").strip().upper()
+    order = ["LOW", "MEDIUM", "HIGH", "CRITICAL"]
+    if s not in order:
+        return sev
+    idx = order.index(s)
+    return order[max(0, idx - 1)]
+
+
 @router.get("/brute-force", response_model=BruteForceDetectionsResponse)
 def get_brute_force_detections(
     time_window_minutes: int = Query(15, ge=1, le=1440, description="Time window in minutes to check for failed attempts"),
@@ -74,6 +83,7 @@ def get_brute_force_detections(
     source_ip: Optional[str] = Query(None, description="Optional specific IP to check"),
     severity: Optional[str] = Query(None, description="Optional severity filter (CRITICAL/HIGH/MEDIUM/LOW)"),
     include_reputation: bool = Query(False, description="Include VirusTotal IP reputation data"),
+    include_ml: bool = Query(True, description="Include ML anomaly/classification/risk scoring if available"),
     format: ThreatExportFormat = Query(None, description="Optional export format (csv/json)")
 ):
     """
@@ -86,6 +96,9 @@ def get_brute_force_detections(
     detailed attack timeline information.
     """
     try:
+        from app.services.ml_service import ml_service
+        ml_service.initialize()
+
         detections = detect_brute_force(
             time_window_minutes=time_window_minutes,
             threshold=threshold,
@@ -126,7 +139,7 @@ def get_brute_force_detections(
                     # Enhance severity based on reputation
                     severity = enhance_severity_with_reputation(severity, rep_data)
             
-            detection_models.append(
+            model = BruteForceDetection(
                 BruteForceDetection(
                     source_ip=detected_ip,
                     total_attempts=detection["total_attempts"],
@@ -139,6 +152,36 @@ def get_brute_force_detections(
                     virustotal=ip_reputation
                 )
             )
+
+            if include_ml:
+                # Representative log: we only have log_id list in windows; use a synthetic log line hinting the behavior.
+                raw_hint = detection.get("sample_raw_log") or f"SSH failed login brute force suspected from {detected_ip}"
+                ml = ml_service.score(
+                    source_ip=detected_ip,
+                    threat_type_hint="BRUTE_FORCE",
+                    severity_hint=severity,
+                    timestamp=detection.get("last_attempt"),
+                    log_source=detection.get("sample_log_source") or "auth.log",
+                    event_type=detection.get("sample_event_type") or "SSH_FAILED_LOGIN",
+                    raw_log=raw_hint,
+                    context={"threat": "brute_force", "source_ip": detected_ip},
+                )
+                model.ml_anomaly_score = ml.anomaly_score
+                model.ml_predicted_label = ml.predicted_label
+                model.ml_confidence = ml.confidence
+                model.ml_risk_score = ml.risk_score
+                model.ml_reasoning = ml.reasoning or []
+
+                # Reduce false positives conservatively: if ML is strongly NORMAL and low anomaly, downgrade severity
+                if (
+                    (ml.predicted_label or "").upper() == "NORMAL"
+                    and (ml.confidence or 0.0) >= 0.80
+                    and (ml.anomaly_score or 0.0) <= 0.30
+                ):
+                    model.severity = _downgrade_severity(model.severity)
+                    model.ml_reasoning.append(f"severity_downgraded_to={model.severity}")
+
+            detection_models.append(model)
         
         # Determine time range for response
         if end_date is None:
@@ -201,7 +244,8 @@ def get_brute_force_detections(
 @router.post("/brute-force", response_model=BruteForceDetectionsResponse)
 def detect_brute_force_post(
     config: BruteForceConfig = Body(..., description="Brute force detection configuration"),
-    include_reputation: bool = Query(False, description="Include VirusTotal IP reputation data")
+    include_reputation: bool = Query(False, description="Include VirusTotal IP reputation data"),
+    include_ml: bool = Query(True, description="Include ML anomaly/classification/risk scoring if available")
 ):
     """
     Detect brute force attacks using POST method with configuration in request body.
@@ -209,6 +253,9 @@ def detect_brute_force_post(
     This endpoint allows more complex configurations to be sent in the request body.
     """
     try:
+        from app.services.ml_service import ml_service
+        ml_service.initialize()
+
         detections = detect_brute_force(
             time_window_minutes=config.time_window_minutes,
             threshold=config.threshold,
@@ -249,8 +296,7 @@ def detect_brute_force_post(
                     # Enhance severity based on reputation
                     severity = enhance_severity_with_reputation(severity, rep_data)
             
-            detection_models.append(
-                BruteForceDetection(
+            model = BruteForceDetection(
                     source_ip=detected_ip,
                     total_attempts=detection["total_attempts"],
                     unique_usernames_attempted=detection["unique_usernames_attempted"],
@@ -260,8 +306,35 @@ def detect_brute_force_post(
                     attack_windows=attack_windows,
                     severity=severity,
                     virustotal=ip_reputation
-                )
             )
+
+            if include_ml:
+                raw_hint = detection.get("sample_raw_log") or f"SSH failed login brute force suspected from {detected_ip}"
+                ml = ml_service.score(
+                    source_ip=detected_ip,
+                    threat_type_hint="BRUTE_FORCE",
+                    severity_hint=severity,
+                    timestamp=detection.get("last_attempt"),
+                    log_source=detection.get("sample_log_source") or "auth.log",
+                    event_type=detection.get("sample_event_type") or "SSH_FAILED_LOGIN",
+                    raw_log=raw_hint,
+                    context={"threat": "brute_force", "source_ip": detected_ip},
+                )
+                model.ml_anomaly_score = ml.anomaly_score
+                model.ml_predicted_label = ml.predicted_label
+                model.ml_confidence = ml.confidence
+                model.ml_risk_score = ml.risk_score
+                model.ml_reasoning = ml.reasoning or []
+
+                if (
+                    (ml.predicted_label or "").upper() == "NORMAL"
+                    and (ml.confidence or 0.0) >= 0.80
+                    and (ml.anomaly_score or 0.0) <= 0.30
+                ):
+                    model.severity = _downgrade_severity(model.severity)
+                    model.ml_reasoning.append(f"severity_downgraded_to={model.severity}")
+
+            detection_models.append(model)
         
         # Determine time range for response
         end_date = config.end_date if config.end_date else datetime.utcnow()
@@ -324,6 +397,7 @@ def get_ddos_detections(
     protocol: Optional[str] = Query(None, description="Optional protocol to filter by (TCP, UDP, etc.)"),
     severity: Optional[str] = Query(None, description="Optional severity filter (CRITICAL/HIGH/MEDIUM/LOW)"),
     include_reputation: bool = Query(False, description="Include VirusTotal IP reputation data"),
+    include_ml: bool = Query(True, description="Include ML anomaly/classification/risk scoring if available"),
     format: ThreatExportFormat = Query(None, description="Optional export format (csv/json)")
 ):
     """
@@ -344,6 +418,9 @@ def get_ddos_detections(
     - Severity assessment
     """
     try:
+        from app.services.ml_service import ml_service
+        ml_service.initialize()
+
         detections = detect_ddos(
             time_window_seconds=time_window_seconds,
             single_ip_threshold=single_ip_threshold,
@@ -384,8 +461,7 @@ def get_ddos_detections(
                 for win in detection["attack_windows"]
             ]
             
-            detection_models.append(
-                DDoSDetection(
+            model = DDoSDetection(
                     attack_type=detection["attack_type"],
                     source_ips=detection["source_ips"],
                     source_ip_count=detection["source_ip_count"],
@@ -407,8 +483,29 @@ def get_ddos_detections(
                         for ip, rep_data in reputation_data.items()
                         if ip in detection.get("source_ips", []) and rep_data
                     } if include_reputation and reputation_data else None
-                )
             )
+
+            if include_ml:
+                sample_ip = (detection.get("source_ips") or [None])[0]
+                # DDoS detection is aggregate; use a generic hint (or later we can sample a real raw log)
+                raw_hint = f"Traffic flood suspected from {sample_ip or 'unknown'}"
+                ml = ml_service.score(
+                    source_ip=sample_ip,
+                    threat_type_hint="DDOS",
+                    severity_hint=model.severity,
+                    timestamp=detection.get("last_request"),
+                    log_source="ufw.log",
+                    event_type="DDOS_FLOOD",
+                    raw_log=raw_hint,
+                    context={"threat": "ddos", "source_ip": sample_ip, "attack_type": model.attack_type},
+                )
+                model.ml_anomaly_score = ml.anomaly_score
+                model.ml_predicted_label = ml.predicted_label
+                model.ml_confidence = ml.confidence
+                model.ml_risk_score = ml.risk_score
+                model.ml_reasoning = ml.reasoning or []
+
+            detection_models.append(model)
         
         # Determine time range for response
         if end_date is None:
@@ -489,6 +586,7 @@ def get_port_scan_detections(
     protocol: Optional[str] = Query(None, description="Optional protocol filter (TCP/UDP)"),
     severity: Optional[str] = Query(None, description="Optional severity filter (CRITICAL/HIGH/MEDIUM/LOW)"),
     include_reputation: bool = Query(False, description="Include VirusTotal IP reputation data"),
+    include_ml: bool = Query(True, description="Include ML anomaly/classification/risk scoring if available"),
     format: ThreatExportFormat = Query(None, description="Optional export format (csv/json)")
 ):
     """
@@ -496,6 +594,9 @@ def get_port_scan_detections(
     in a short time window.
     """
     try:
+        from app.services.ml_service import ml_service
+        ml_service.initialize()
+
         detections = detect_port_scan(
             time_window_minutes=time_window_minutes,
             unique_ports_threshold=unique_ports_threshold,
@@ -536,8 +637,7 @@ def get_port_scan_detections(
                 for w in detection.get("attack_windows", [])
             ]
 
-            detection_models.append(
-                PortScanDetection(
+            model = PortScanDetection(
                     source_ip=detected_ip,
                     total_attempts=detection.get("total_attempts", 0),
                     unique_ports_attempted=detection.get("unique_ports_attempted", 0),
@@ -547,8 +647,27 @@ def get_port_scan_detections(
                     attack_windows=windows,
                     severity=severity,
                     virustotal=ip_reputation
-                )
             )
+
+            if include_ml:
+                raw_hint = f"Port scan suspected from {detected_ip} against {model.unique_ports_attempted} ports"
+                ml = ml_service.score(
+                    source_ip=detected_ip,
+                    threat_type_hint="PORT_SCAN",
+                    severity_hint=model.severity,
+                    timestamp=detection.get("last_attempt"),
+                    log_source="ufw.log",
+                    event_type="PORT_SCAN",
+                    raw_log=raw_hint,
+                    context={"threat": "port_scan", "source_ip": detected_ip},
+                )
+                model.ml_anomaly_score = ml.anomaly_score
+                model.ml_predicted_label = ml.predicted_label
+                model.ml_confidence = ml.confidence
+                model.ml_risk_score = ml.risk_score
+                model.ml_reasoning = ml.reasoning or []
+
+            detection_models.append(model)
 
         # Determine time range for response
         if end_date is None:
