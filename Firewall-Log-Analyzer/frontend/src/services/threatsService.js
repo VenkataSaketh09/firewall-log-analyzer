@@ -67,7 +67,17 @@ export const getPortScanThreats = async (params = {}) => {
  * Get IP reputation
  */
 export const getIPReputation = async (ip) => {
-  const response = await api.get(`/api/ip-reputation/${ip}`);
+  // Default: use cache for speed. Caller can pass use_cache=false to force refresh.
+  const response = await api.get(`/api/ip-reputation/${ip}`, { params: { use_cache: true } });
+  return response.data;
+};
+
+/**
+ * Get IP reputation with options (e.g., bypass cache)
+ */
+export const getIPReputationWithOptions = async (ip, options = {}) => {
+  const { use_cache = true } = options;
+  const response = await api.get(`/api/ip-reputation/${ip}`, { params: { use_cache } });
   return response.data;
 };
 

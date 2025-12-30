@@ -2,6 +2,7 @@ import os
 import requests
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any
+import ipaddress
 from dotenv import load_dotenv
 from app.db.mongo import db
 
@@ -41,6 +42,29 @@ def get_ip_reputation(ip_address: str, use_cache: bool = True) -> Optional[Dict[
     Returns:
         Dictionary with IP reputation data or None if error
     """
+    # VirusTotal won't have enrichment for private/reserved IPs; avoid wasting API calls.
+    try:
+        ip_obj = ipaddress.ip_address(ip_address)
+        if ip_obj.is_private or ip_obj.is_loopback or ip_obj.is_link_local or ip_obj.is_reserved or ip_obj.is_multicast:
+            return {
+                "detected": False,
+                "reputation_score": 0,
+                "threat_level": "UNKNOWN",
+                "malicious_count": 0,
+                "suspicious_count": 0,
+                "total_engines": 0,
+                "last_analysis_date": None,
+                "country": None,
+                "asn": None,
+                "as_owner": None,
+                "categories": [],
+                "detection_names": [],
+                "virustotal_url": None,
+            }
+    except ValueError:
+        # Not a valid IP string; let downstream handle.
+        pass
+
     if not VIRUS_TOTAL_API_KEY:
         return None
     
@@ -77,18 +101,18 @@ def get_ip_reputation(ip_address: str, use_cache: bool = True) -> Optional[Dict[
             reputation_data = _normalize_reputation_fields(reputation_data)
             
             # Cache the result
-            if use_cache:
-                ip_reputation_cache.update_one(
-                    {"ip": ip_address},
-                    {
-                        "$set": {
-                            **reputation_data,
-                            "ip": ip_address,
-                            "cached_at": datetime.utcnow()
-                        }
-                    },
-                    upsert=True
-                )
+            # Always write-through cache on successful fetch, even if caller bypassed cache reads.
+            ip_reputation_cache.update_one(
+                {"ip": ip_address},
+                {
+                    "$set": {
+                        **reputation_data,
+                        "ip": ip_address,
+                        "cached_at": datetime.utcnow()
+                    }
+                },
+                upsert=True
+            )
             
             return reputation_data
         
@@ -107,18 +131,17 @@ def get_ip_reputation(ip_address: str, use_cache: bool = True) -> Optional[Dict[
             }
             
             # Cache the result
-            if use_cache:
-                ip_reputation_cache.update_one(
-                    {"ip": ip_address},
-                    {
-                        "$set": {
-                            **reputation_data,
-                            "ip": ip_address,
-                            "cached_at": datetime.utcnow()
-                        }
-                    },
-                    upsert=True
-                )
+            ip_reputation_cache.update_one(
+                {"ip": ip_address},
+                {
+                    "$set": {
+                        **reputation_data,
+                        "ip": ip_address,
+                        "cached_at": datetime.utcnow()
+                    }
+                },
+                upsert=True
+            )
             
             return reputation_data
         
