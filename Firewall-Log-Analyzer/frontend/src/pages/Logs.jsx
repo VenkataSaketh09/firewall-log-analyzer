@@ -1,15 +1,15 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { FiDownload, FiRefreshCw, FiFileText, FiFile, FiFileMinus } from 'react-icons/fi';
-import { getLogs, exportLogsCSV, exportLogsJSON, exportLogsPDF, exportSelectedLogsPDF } from '../services/logsService';
+import { exportLogsCSV, exportLogsJSON, exportLogsPDF, exportSelectedLogsPDF } from '../services/logsService';
 import { formatDateForAPI } from '../utils/dateUtils';
 import LogFilterPanel from '../components/logs/LogFilterPanel';
 import LogsTable from '../components/logs/LogsTable';
 import LogDetailsModal from '../components/logs/LogDetailsModal';
+import { useLogs } from '../hooks/useLogs';
 
 const Logs = () => {
-  const [logs, setLogs] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const queryClient = useQueryClient();
   const [selectedLog, setSelectedLog] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedLogs, setSelectedLogs] = useState([]);
@@ -20,8 +20,6 @@ const Logs = () => {
   const [pagination, setPagination] = useState({
     page: 1,
     page_size: 50,
-    total: 0,
-    total_pages: 0,
   });
   const [sortBy, setSortBy] = useState('timestamp');
   const [sortOrder, setSortOrder] = useState('desc');
@@ -37,63 +35,56 @@ const Logs = () => {
     search: '',
   });
 
-  const fetchLogs = async () => {
-    try {
-      setLoading(true);
-      setError(null);
+  // Build query params
+  const queryParams = useMemo(() => {
+    const params = {
+      page: pagination.page,
+      page_size: pagination.page_size,
+      sort_by: sortBy,
+      sort_order: sortOrder,
+    };
 
-      const params = {
-        page: pagination.page,
-        page_size: pagination.page_size,
-        sort_by: sortBy,
-        sort_order: sortOrder,
-      };
-
-      // Add filters
-      if (filters.start_date) {
-        params.start_date = formatDateForAPI(new Date(filters.start_date));
-      }
-      if (filters.end_date) {
-        params.end_date = formatDateForAPI(new Date(filters.end_date));
-      }
-      if (filters.source_ip) params.source_ip = filters.source_ip;
-      if (filters.severity) params.severity = filters.severity;
-      if (filters.event_type) params.event_type = filters.event_type;
-      if (filters.log_source) params.log_source = filters.log_source;
-      if (filters.protocol) params.protocol = filters.protocol;
-      if (filters.port) params.port = filters.port;
-      if (filters.search) params.search = filters.search;
-
-      const data = await getLogs(params);
-      // Normalize backend id field: FastAPI/Pydantic may return either "id" or "_id"
-      const normalizedLogs = (data.logs || []).map((log) => ({
-        ...log,
-        id: log.id ?? log._id,
-      }));
-      setLogs(normalizedLogs);
-      setPagination({
-        page: data.page || 1,
-        page_size: data.page_size || 50,
-        total: data.total || 0,
-        total_pages: data.total_pages || 0,
-      });
-    } catch (err) {
-      console.error('Error fetching logs:', err);
-      setError(err.message || 'Failed to load logs');
-    } finally {
-      setLoading(false);
+    // Add filters
+    if (filters.start_date) {
+      params.start_date = formatDateForAPI(new Date(filters.start_date));
     }
-  };
+    if (filters.end_date) {
+      params.end_date = formatDateForAPI(new Date(filters.end_date));
+    }
+    if (filters.source_ip) params.source_ip = filters.source_ip;
+    if (filters.severity) params.severity = filters.severity;
+    if (filters.event_type) params.event_type = filters.event_type;
+    if (filters.log_source) params.log_source = filters.log_source;
+    if (filters.protocol) params.protocol = filters.protocol;
+    if (filters.port) params.port = filters.port;
+    if (filters.search) params.search = filters.search;
 
-  useEffect(() => {
-    fetchLogs();
-  }, [pagination.page, pagination.page_size, sortBy, sortOrder]);
+    return params;
+  }, [pagination.page, pagination.page_size, sortBy, sortOrder, filters]);
+
+  // Use React Query hook
+  const { data, isLoading: loading, error, refetch } = useLogs(queryParams);
+
+  // Normalize logs and pagination from query result
+  const logs = useMemo(() => {
+    if (!data?.logs) return [];
+    return data.logs.map((log) => ({
+      ...log,
+      id: log.id ?? log._id,
+    }));
+  }, [data]);
+
+  const paginationData = useMemo(() => ({
+    page: data?.page || 1,
+    page_size: data?.page_size || 50,
+    total: data?.total || 0,
+    total_pages: data?.total_pages || 0,
+  }), [data]);
 
   // Debounce filter changes
   useEffect(() => {
     const timer = setTimeout(() => {
       setPagination((prev) => ({ ...prev, page: 1 }));
-      fetchLogs();
     }, 500);
 
     return () => clearTimeout(timer);
@@ -288,26 +279,26 @@ const Logs = () => {
     }
   };
   return (
-    <div className="min-h-screen bg-gray-50 p-6">
+    <div className="min-h-screen">
       <div className="max-w-7xl mx-auto">
         {/* Header */}
         <div className="mb-6 flex items-center justify-between">
           <div>
-            <h1 className="text-3xl font-bold text-gray-900">Firewall Logs</h1>
+            <h1 className="text-3xl font-bold bg-gradient-to-r from-primary-500 to-accent-500 bg-clip-text text-transparent">Firewall Logs</h1>
             <p className="text-gray-600 mt-1">Browse and analyze firewall logs</p>
           </div>
           <div className="flex items-center gap-3">
             <button
-              onClick={fetchLogs}
+              onClick={() => refetch()}
               disabled={loading}
-              className="px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700 disabled:opacity-50 flex items-center gap-2"
+              className="px-4 py-2 bg-primary-500 text-white rounded-md hover:bg-primary-600 disabled:opacity-50 flex items-center gap-2 transition-colors"
             >
               <FiRefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
               Refresh
             </button>
             <div className="relative" ref={exportMenuRef}>
               <button 
-                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 flex items-center gap-2"
+                className="px-4 py-2 bg-accent-500 text-white rounded-md hover:bg-accent-600 flex items-center gap-2 transition-colors"
                 onClick={(e) => {
                   e.stopPropagation();
                   setShowExportMenu(!showExportMenu);
@@ -369,14 +360,14 @@ const Logs = () => {
 
         {/* Bulk Actions */}
         {selectedLogs.length > 0 && (
-          <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg flex items-center justify-between">
-            <span className="text-sm text-blue-800">
+          <div className="mb-4 p-4 bg-accent-50 border border-accent-200 rounded-lg flex items-center justify-between">
+            <span className="text-sm text-accent-800">
               {selectedLogs.length} log(s) selected
             </span>
             <div className="flex items-center gap-3">
               <div className="relative" ref={selectedExportMenuRef}>
                 <button
-                  className="px-3 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 flex items-center gap-2 text-sm"
+                  className="px-3 py-2 bg-accent-500 text-white rounded-md hover:bg-accent-600 flex items-center gap-2 text-sm transition-colors"
                   onClick={(e) => {
                     e.stopPropagation();
                     setShowSelectedExportMenu(!showSelectedExportMenu);
@@ -428,7 +419,7 @@ const Logs = () => {
               </div>
               <button
                 onClick={() => setSelectedLogs([])}
-                className="text-sm text-blue-600 hover:text-blue-800"
+                className="text-sm text-accent-600 hover:text-accent-800 transition-colors"
               >
                 Clear Selection
               </button>
@@ -438,15 +429,15 @@ const Logs = () => {
 
         {/* Error Message */}
         {error && (
-          <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg">
-            <p className="text-red-800">{error}</p>
+          <div className="mb-4 p-4 bg-accent-50 border border-accent-200 rounded-lg">
+            <p className="text-accent-800">{error?.message || 'Failed to load logs'}</p>
           </div>
         )}
 
         {/* Logs Table */}
         {loading && logs.length === 0 ? (
           <div className="bg-white rounded-lg shadow p-12 text-center">
-            <FiRefreshCw className="w-8 h-8 animate-spin mx-auto text-blue-600 mb-4" />
+            <FiRefreshCw className="w-8 h-8 animate-spin mx-auto text-primary-500 mb-4" />
             <p className="text-gray-600">Loading logs...</p>
           </div>
         ) : (
@@ -466,14 +457,14 @@ const Logs = () => {
             <div className="mt-6 flex items-center justify-between bg-white rounded-lg shadow p-4">
               <div className="flex items-center gap-4">
                 <span className="text-sm text-gray-700">
-                  Showing {(pagination.page - 1) * pagination.page_size + 1} to{' '}
-                  {Math.min(pagination.page * pagination.page_size, pagination.total)} of{' '}
-                  {pagination.total} logs
+                  Showing {(paginationData.page - 1) * paginationData.page_size + 1} to{' '}
+                  {Math.min(paginationData.page * paginationData.page_size, paginationData.total)} of{' '}
+                  {paginationData.total} logs
                 </span>
                 <select
                   value={pagination.page_size}
                   onChange={(e) => handlePageSizeChange(e.target.value)}
-                  className="px-3 py-1 border border-gray-300 rounded-md text-sm"
+                  className="px-3 py-1 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
                 >
                   <option value={25}>25 per page</option>
                   <option value={50}>50 per page</option>
@@ -484,19 +475,19 @@ const Logs = () => {
 
               <div className="flex items-center gap-2">
                 <button
-                  onClick={() => handlePageChange(pagination.page - 1)}
-                  disabled={pagination.page === 1}
-                  className="px-3 py-1 border border-gray-300 rounded-md text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+                  onClick={() => handlePageChange(paginationData.page - 1)}
+                  disabled={paginationData.page === 1}
+                  className="px-3 py-1 border border-gray-300 rounded-md text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:bg-primary-50 hover:border-primary-300 transition-colors"
                 >
                   Previous
                 </button>
                 <span className="text-sm text-gray-700">
-                  Page {pagination.page} of {pagination.total_pages}
+                  Page {paginationData.page} of {paginationData.total_pages}
                 </span>
                 <button
-                  onClick={() => handlePageChange(pagination.page + 1)}
-                  disabled={pagination.page >= pagination.total_pages}
-                  className="px-3 py-1 border border-gray-300 rounded-md text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+                  onClick={() => handlePageChange(paginationData.page + 1)}
+                  disabled={paginationData.page >= paginationData.total_pages}
+                  className="px-3 py-1 border border-gray-300 rounded-md text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:bg-primary-50 hover:border-primary-300 transition-colors"
                 >
                   Next
                 </button>
