@@ -107,3 +107,16 @@ export const exportThreatsJSON = async (threatType, params = {}) => {
   return response.data;
 };
 
+/**
+ * Get brute force timeline for a specific IP
+ */
+export const getBruteForceTimeline = async (ip, params = {}) => {
+  const { start_date = null, end_date = null } = params;
+  const queryParams = {};
+  if (start_date) queryParams.start_date = start_date;
+  if (end_date) queryParams.end_date = end_date;
+
+  const response = await api.get(`/api/threats/brute-force/${ip}/timeline`, { params: queryParams });
+  return response.data;
+};
+

@@ -11,6 +11,7 @@ db = client.firewall_analyzer
 logs_collection = db.firewall_logs
 ip_reputation_cache = db.ip_reputation_cache
 saved_reports_collection = db.saved_reports
+alerts_collection = db.alerts
 
 
 def create_indexes():
@@ -47,6 +48,19 @@ def create_indexes():
         saved_reports_collection.create_index([("created_at", DESCENDING)], name="reports_created_at_desc")
         saved_reports_collection.create_index([("report_type", ASCENDING)], name="reports_type_asc")
         saved_reports_collection.create_index([("period.start", DESCENDING)], name="reports_period_start_desc")
+
+        # Indexes for alerts collection (dashboard cache + first-class alerts)
+        alerts_collection.create_index([("bucket_end", DESCENDING)], name="alerts_bucket_end_desc")
+        alerts_collection.create_index([("lookback_seconds", ASCENDING)], name="alerts_lookback_asc")
+        alerts_collection.create_index(
+            [("bucket_end", DESCENDING), ("lookback_seconds", ASCENDING), ("severity", ASCENDING)],
+            name="alerts_bucket_lookback_severity"
+        )
+        alerts_collection.create_index(
+            [("bucket_end", DESCENDING), ("lookback_seconds", ASCENDING), ("alert_type", ASCENDING), ("source_ip", ASCENDING)],
+            unique=True,
+            name="alerts_bucket_type_ip_unique"
+        )
         
         print("Database indexes created successfully")
     except Exception as e:

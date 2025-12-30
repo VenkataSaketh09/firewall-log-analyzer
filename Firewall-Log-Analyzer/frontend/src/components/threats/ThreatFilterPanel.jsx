@@ -1,7 +1,21 @@
 import React from 'react';
 import { FiFilter, FiX } from 'react-icons/fi';
+import dayjs from 'dayjs';
 
 const ThreatFilterPanel = ({ filters, onFilterChange, onReset }) => {
+  const applyQuickRange = (range) => {
+    const end = dayjs();
+    let start = null;
+
+    if (range === 'weekly') start = end.subtract(7, 'day');
+    if (range === 'monthly') start = end.subtract(30, 'day');
+    if (range === 'yearly') start = end.subtract(365, 'day');
+    if (!start) return;
+
+    onFilterChange('start_date', start.format('YYYY-MM-DDTHH:mm'));
+    onFilterChange('end_date', end.format('YYYY-MM-DDTHH:mm'));
+  };
+
   return (
     <div className="bg-white rounded-lg shadow p-6 mb-6">
       <div className="flex items-center justify-between mb-4">
@@ -18,6 +32,31 @@ const ThreatFilterPanel = ({ filters, onFilterChange, onReset }) => {
             Clear All
           </button>
         )}
+      </div>
+
+      {/* Quick ranges */}
+      <div className="mb-4 flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={() => applyQuickRange('weekly')}
+          className="px-3 py-1.5 text-sm border border-gray-300 rounded-md hover:bg-gray-50"
+        >
+          Last Week
+        </button>
+        <button
+          type="button"
+          onClick={() => applyQuickRange('monthly')}
+          className="px-3 py-1.5 text-sm border border-gray-300 rounded-md hover:bg-gray-50"
+        >
+          Last Month
+        </button>
+        <button
+          type="button"
+          onClick={() => applyQuickRange('yearly')}
+          className="px-3 py-1.5 text-sm border border-gray-300 rounded-md hover:bg-gray-50"
+        >
+          Last Year
+        </button>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">

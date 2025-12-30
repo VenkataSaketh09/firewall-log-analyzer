@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { FiDownload, FiRefreshCw, FiFileText, FiFile } from 'react-icons/fi';
-import { getLogs, exportLogsCSV, exportLogsJSON } from '../services/logsService';
+import { FiDownload, FiRefreshCw, FiFileText, FiFile, FiFileMinus } from 'react-icons/fi';
+import { getLogs, exportLogsCSV, exportLogsJSON, exportLogsPDF } from '../services/logsService';
 import { formatDateForAPI } from '../utils/dateUtils';
 import LogFilterPanel from '../components/logs/LogFilterPanel';
 import LogsTable from '../components/logs/LogsTable';
@@ -30,6 +30,8 @@ const Logs = () => {
     end_date: null,
     source_ip: '',
     severity: '',
+    event_type: '',
+    log_source: '',
     protocol: '',
     port: '',
     search: '',
@@ -56,6 +58,8 @@ const Logs = () => {
       }
       if (filters.source_ip) params.source_ip = filters.source_ip;
       if (filters.severity) params.severity = filters.severity;
+      if (filters.event_type) params.event_type = filters.event_type;
+      if (filters.log_source) params.log_source = filters.log_source;
       if (filters.protocol) params.protocol = filters.protocol;
       if (filters.port) params.port = filters.port;
       if (filters.search) params.search = filters.search;
@@ -128,6 +132,8 @@ const Logs = () => {
       end_date: null,
       source_ip: '',
       severity: '',
+      event_type: '',
+      log_source: '',
       protocol: '',
       port: '',
       search: '',
@@ -186,6 +192,8 @@ const Logs = () => {
       if (filters.end_date) params.end_date = formatDateForAPI(new Date(filters.end_date));
       if (filters.source_ip) params.source_ip = filters.source_ip;
       if (filters.severity) params.severity = filters.severity;
+      if (filters.event_type) params.event_type = filters.event_type;
+      if (filters.log_source) params.log_source = filters.log_source;
       if (filters.protocol) params.protocol = filters.protocol;
       if (filters.port) params.port = filters.port;
       if (filters.search) params.search = filters.search;
@@ -196,9 +204,12 @@ const Logs = () => {
       if (format === 'csv') {
         blob = await exportLogsCSV(params);
         filename = `logs_export_${new Date().toISOString().split('T')[0]}.csv`;
-      } else {
+      } else if (format === 'json') {
         blob = await exportLogsJSON(params);
         filename = `logs_export_${new Date().toISOString().split('T')[0]}.json`;
+      } else {
+        blob = await exportLogsPDF(params);
+        filename = `logs_export_${new Date().toISOString().split('T')[0]}.pdf`;
       }
 
       downloadBlob(blob, filename);
@@ -316,6 +327,17 @@ const Logs = () => {
                   >
                     <FiFile className="w-4 h-4" />
                     Export as JSON
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleExport('pdf');
+                      setShowExportMenu(false);
+                    }}
+                    className="w-full text-left px-4 py-2 hover:bg-gray-100 flex items-center gap-2 text-sm transition-colors"
+                  >
+                    <FiFileMinus className="w-4 h-4" />
+                    Export as PDF
                   </button>
                 </div>
               )}

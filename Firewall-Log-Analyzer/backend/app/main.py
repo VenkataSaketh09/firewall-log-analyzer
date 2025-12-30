@@ -6,6 +6,7 @@ from app.routes.threats import router as threats_router
 from app.routes.reports import router as reports_router
 from app.routes.ip_reputation import router as ip_reputation_router
 from app.routes.dashboard import router as dashboard_router
+from app.routes.alerts import router as alerts_router
 from app.middleware.rate_limit import RateLimitMiddleware
 from app.config import validate_environment
 from app.services.retention_service import start_log_retention_worker
@@ -44,6 +45,7 @@ app.include_router(threats_router)
 app.include_router(reports_router)
 app.include_router(ip_reputation_router)
 app.include_router(dashboard_router)
+app.include_router(alerts_router)
 
 
 @app.on_event("startup")
