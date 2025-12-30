@@ -8,6 +8,7 @@ from typing import Dict, List, Optional, Tuple, Any
 import logging
 import re
 from datetime import datetime
+import hashlib
 import sys
 from pathlib import Path
 
@@ -83,6 +84,21 @@ class FeatureExtractor:
         logger.info(f"Feature names: {self.feature_names[:10]}..." if len(self.feature_names) > 10 else f"Feature names: {self.feature_names}")
         
         return features_df
+
+    @staticmethod
+    def _stable_hash_mod(value: Any, mod: int) -> int:
+        """
+        Deterministic hash for feature encoding.
+
+        NOTE: Python's built-in hash() is salted per process, so it is not stable across runs.
+        We use a stable hash to ensure training/inference consistency.
+        """
+        if value is None or (isinstance(value, float) and np.isnan(value)):
+            return 0
+        s = str(value).encode("utf-8", errors="ignore")
+        # 64-bit digest is plenty for modulo bucketing
+        digest = hashlib.blake2b(s, digest_size=8).digest()
+        return int.from_bytes(digest, byteorder="big", signed=False) % mod
     
     def _extract_ip_features(self, df: pd.DataFrame) -> pd.DataFrame:
         """
@@ -101,9 +117,7 @@ class FeatureExtractor:
         df['extracted_ip'] = df['Content'].str.extract(f'({ip_pattern})', expand=False)
         
         # IP hash (for anonymization while preserving uniqueness)
-        df['ip_hash'] = df['extracted_ip'].apply(
-            lambda x: hash(str(x)) % 10000 if pd.notna(x) else 0
-        )
+        df['ip_hash'] = df['extracted_ip'].apply(lambda x: self._stable_hash_mod(x, 10000) if pd.notna(x) else 0)
         
         # Count occurrences of each IP
         ip_counts = df['extracted_ip'].value_counts().to_dict()
@@ -140,13 +154,27 @@ class FeatureExtractor:
         """
         logger.info("Extracting time-based features...")
         
-        # Create datetime if not exists
+        # Ensure datetime column exists and is actually datetimelike.
+        # NOTE: when loading saved CSV splits, 'datetime' often comes back as string/object.
         if 'datetime' not in df.columns:
             try:
-                datetime_str = df['Month'].astype(str) + ' ' + df['Date'].astype(str) + ' ' + df['Time'].astype(str) + ' 2005'
+                datetime_str = (
+                    df['Month'].astype(str)
+                    + ' '
+                    + df['Date'].astype(str)
+                    + ' '
+                    + df['Time'].astype(str)
+                    + ' 2005'
+                )
                 df['datetime'] = pd.to_datetime(datetime_str, format='%b %d %H:%M:%S %Y', errors='coerce')
-            except:
+            except Exception:
                 df['datetime'] = pd.Timestamp.now()
+        else:
+            df['datetime'] = pd.to_datetime(df['datetime'], errors='coerce')
+
+        # If parsing failed for some rows, fill with a stable default (keeps feature extraction robust)
+        if df['datetime'].isna().any():
+            df['datetime'] = df['datetime'].fillna(pd.Timestamp('2005-06-14 00:00:00'))
         
         # Extract time components
         df['hour'] = df['datetime'].dt.hour
@@ -194,7 +222,7 @@ class FeatureExtractor:
         # EventId features
         if 'EventId' in df.columns:
             # EventId hash (for encoding)
-            df['event_id_hash'] = df['EventId'].apply(lambda x: hash(str(x)) % 1000 if pd.notna(x) else 0)
+            df['event_id_hash'] = df['EventId'].apply(lambda x: self._stable_hash_mod(x, 1000) if pd.notna(x) else 0)
             
             # Check for specific event patterns
             df['is_auth_failure'] = df['EventId'].str.contains('E16|E17|E18|E27', na=False).astype(int)
@@ -204,7 +232,7 @@ class FeatureExtractor:
         # Component features
         if 'Component' in df.columns:
             # Component hash
-            df['component_hash'] = df['Component'].apply(lambda x: hash(str(x)) % 100 if pd.notna(x) else 0)
+            df['component_hash'] = df['Component'].apply(lambda x: self._stable_hash_mod(x, 100) if pd.notna(x) else 0)
             
             # Check for specific components
             df['is_sshd'] = df['Component'].str.contains('sshd', case=False, na=False).astype(int)
@@ -311,10 +339,6 @@ class FeatureExtractor:
                                      'Component', 'PID', 'Content', 'EventId', 
                                      'EventTemplate', 'datetime', 'label', 'label_id',
                                      'extracted_ip']]  # Exclude extracted_ip as it's categorical
-        
-        # Also exclude intermediate columns
-        exclude_cols = ['ip_hash', 'ip_freq_category']  # These are encoded differently
-        feature_cols = [col for col in feature_cols if col not in exclude_cols]
         
         X = df[feature_cols].copy()
         

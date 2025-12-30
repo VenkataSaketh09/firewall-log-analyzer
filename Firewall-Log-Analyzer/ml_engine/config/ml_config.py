@@ -19,6 +19,11 @@ THREAT_CLASSIFIER_MODEL = MODELS_DIR / "threat_classifier.pkl"
 FEATURE_SCALER = MODELS_DIR / "feature_scaler.pkl"
 LABEL_ENCODER = MODELS_DIR / "label_encoder.pkl"
 
+# Metrics / metadata
+ANOMALY_METRICS_FILE = MODELS_DIR / "anomaly_metrics.json"
+CLASSIFIER_METRICS_FILE = MODELS_DIR / "classifier_metrics.json"
+MODEL_METADATA_FILE = MODELS_DIR / "model_metadata.json"
+
 # Dataset paths
 DATASET_CSV = DATASET_DIR / "Linux_2k.log_structured.csv"
 DATASET_TEMPLATES = DATASET_DIR / "Linux_2k.log_templates.csv"
