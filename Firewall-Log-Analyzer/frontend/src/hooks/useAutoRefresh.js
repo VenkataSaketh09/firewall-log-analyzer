@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useCallback } from 'react';
 
 /**
  * Custom hook for auto-refreshing data
@@ -8,14 +8,25 @@ import { useEffect, useRef } from 'react';
  */
 export const useAutoRefresh = (fetchFunction, interval = 30000, dependencies = []) => {
   const intervalRef = useRef(null);
+  const fetchRef = useRef(fetchFunction);
+
+  // Update ref when fetchFunction changes
+  useEffect(() => {
+    fetchRef.current = fetchFunction;
+  }, [fetchFunction]);
+
+  // Wrapper function that calls the latest fetchFunction
+  const stableFetch = useCallback(() => {
+    fetchRef.current();
+  }, []);
 
   useEffect(() => {
     // Initial fetch
-    fetchFunction();
+    stableFetch();
 
     // Set up interval
     intervalRef.current = setInterval(() => {
-      fetchFunction();
+      stableFetch();
     }, interval);
 
     // Cleanup
@@ -24,11 +35,10 @@ export const useAutoRefresh = (fetchFunction, interval = 30000, dependencies = [
         clearInterval(intervalRef.current);
       }
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [interval, ...dependencies]);
+  }, [interval, stableFetch, ...dependencies]);
 
   return {
-    refresh: fetchFunction,
+    refresh: stableFetch,
   };
 };
 

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import json
 import hashlib
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 from app.db.mongo import (
@@ -21,7 +21,7 @@ from app.db.mongo import (
 
 
 def _utcnow() -> datetime:
-    return datetime.utcnow()
+    return datetime.now(timezone.utc)
 
 
 def make_cache_key(payload: Dict[str, Any]) -> str:

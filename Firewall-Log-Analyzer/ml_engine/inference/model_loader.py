@@ -7,8 +7,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Optional, Dict, Any
+import warnings
 
 import joblib
+
+# Suppress scikit-learn version mismatch warnings (models trained with 1.5.2, runtime may be 1.8.0+)
+# This is safe as scikit-learn maintains backward compatibility for model loading
+warnings.filterwarnings('ignore', category=UserWarning, module='sklearn')
 
 from ml_engine.config.ml_config import (
     ANOMALY_DETECTOR_MODEL,

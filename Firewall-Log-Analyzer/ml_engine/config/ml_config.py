@@ -48,7 +48,7 @@ TRAINING_CONFIG: Dict[str, Any] = {
         "max_samples": "auto",
         "contamination": 0.1,  # Expected proportion of anomalies
         "random_state": 42,
-        "n_jobs": -1  # Use all available cores
+        "n_jobs": 1  # Use single core to avoid sklearn parallel warnings (can be increased if needed)
     },
     
     # Threat Classifier Model (Random Forest)
@@ -58,7 +58,7 @@ TRAINING_CONFIG: Dict[str, Any] = {
         "min_samples_split": 5,
         "min_samples_leaf": 2,
         "random_state": 42,
-        "n_jobs": -1,
+        "n_jobs": 1,  # Use single core to avoid sklearn parallel warnings (can be increased if needed)
         "class_weight": "balanced"  # Handle class imbalance
     },
     

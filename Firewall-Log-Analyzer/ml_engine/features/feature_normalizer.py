@@ -84,18 +84,63 @@ class FeatureNormalizer:
         Returns:
             Scaled feature matrix (DataFrame)
         """
+        # #region agent log
+        import json
+        import traceback
+        try:
+            with open('/home/nulumohan/firewall-log-analyzer/Firewall-Log-Analyzer/.cursor/debug.log', 'a') as f:
+                f.write(json.dumps({
+                    "sessionId": "debug-session",
+                    "runId": "run1",
+                    "hypothesisId": "A",
+                    "location": "feature_normalizer.py:transform:entry",
+                    "message": "transform called",
+                    "data": {
+                        "input_columns": list(X.columns),
+                        "expected_columns_count": len(self.feature_names),
+                        "has_time_since_last": "time_since_last" in X.columns,
+                        "stack_depth": len(traceback.extract_stack())
+                    },
+                    "timestamp": int(__import__('time').time() * 1000)
+                }) + '\n')
+        except: pass
+        # #endregion
+        
         if self.scaler is None:
             raise ValueError("Scaler not fitted. Call fit() first.")
         
         # Ensure same columns as training
         if list(X.columns) != self.feature_names:
-            logger.warning(f"Feature columns don't match. Expected {len(self.feature_names)}, got {len(X.columns)}")
-            # Reorder columns to match
+            # Handle missing columns
             missing_cols = set(self.feature_names) - set(X.columns)
             if missing_cols:
                 logger.warning(f"Missing columns: {missing_cols}")
                 for col in missing_cols:
                     X[col] = 0
+            
+            # Handle extra columns (remove them)
+            extra_cols = set(X.columns) - set(self.feature_names)
+            if extra_cols:
+                # #region agent log
+                try:
+                    with open('/home/nulumohan/firewall-log-analyzer/Firewall-Log-Analyzer/.cursor/debug.log', 'a') as f:
+                        f.write(json.dumps({
+                            "sessionId": "debug-session",
+                            "runId": "run1",
+                            "hypothesisId": "A",
+                            "location": "feature_normalizer.py:transform:extra_cols",
+                            "message": "extra columns detected",
+                            "data": {
+                                "extra_cols": list(extra_cols),
+                                "all_input_columns": list(X.columns),
+                                "expected_columns": self.feature_names[:10] if len(self.feature_names) > 10 else self.feature_names,
+                                "stack_trace": ''.join(traceback.format_stack()[-5:])
+                            },
+                            "timestamp": int(__import__('time').time() * 1000)
+                        }) + '\n')
+                except: pass
+                # #endregion
+                logger.warning(f"Extra columns found (will be removed): {extra_cols}")
             
             # Select only expected columns in correct order
             X = X[self.feature_names]

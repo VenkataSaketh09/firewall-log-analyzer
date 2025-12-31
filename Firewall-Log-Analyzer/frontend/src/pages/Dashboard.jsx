@@ -37,7 +37,7 @@ const Dashboard = () => {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [mlStatus, setMlStatus] = useState(null);
 
-  const fetchDashboardData = async () => {
+  const fetchDashboardData = React.useCallback(async () => {
     try {
       setIsRefreshing(true);
       const [dashboard, stats, logs, ml] = await Promise.all([
@@ -49,18 +49,19 @@ const Dashboard = () => {
       
       setDashboardData(dashboard);
       setStatsData(stats);
-      setRecentLogs(logs.logs || []);
+      setRecentLogs(logs?.logs || []);
       setMlStatus(ml?.ml || null);
       setError(null);
       setLastRefresh(new Date());
     } catch (err) {
       console.error('Error fetching dashboard data:', err);
-      setError(err.message || 'Failed to load dashboard data');
+      const errorMessage = err?.response?.data?.detail || err?.userMessage || err?.message || 'Failed to load dashboard data';
+      setError(errorMessage);
     } finally {
       setLoading(false);
       setIsRefreshing(false);
     }
-  };
+  }, []);
 
   // Auto-refresh every 30 seconds
   useAutoRefresh(fetchDashboardData, REFRESH_INTERVALS.DASHBOARD, []);
@@ -68,7 +69,7 @@ const Dashboard = () => {
   // Initial load
   useEffect(() => {
     fetchDashboardData();
-  }, []);
+  }, [fetchDashboardData]);
 
   const handleManualRefresh = () => {
     fetchDashboardData();
@@ -104,20 +105,20 @@ const Dashboard = () => {
 
   const dashboard = dashboardData || {};
   const stats = statsData || {};
-  const threats = dashboard.threats || {};
-  const systemHealth = dashboard.system_health || {};
-  const activeAlerts = dashboard.active_alerts || [];
-  const topIPs = dashboard.top_ips || [];
+  const threats = dashboard?.threats || {};
+  const systemHealth = dashboard?.system_health || {};
+  const activeAlerts = dashboard?.active_alerts || [];
+  const topIPs = dashboard?.top_ips || [];
 
   // Calculate security score
   const securityScore = calculateSecurityScore(
     threats,
-    systemHealth.total_logs_24h || 0,
-    systemHealth.high_severity_logs_24h || 0
+    systemHealth?.total_logs_24h || 0,
+    systemHealth?.high_severity_logs_24h || 0
   );
 
   // Get health status
-  const healthStatus = systemHealth.database_status === 'healthy' ? 'healthy' : 'degraded';
+  const healthStatus = systemHealth?.database_status === 'healthy' ? 'healthy' : 'degraded';
 
   return (
     <div className="min-h-screen bg-gray-50 p-6">
@@ -166,17 +167,17 @@ const Dashboard = () => {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         <SummaryCard
           title="Total Logs (24h)"
-          value={formatNumber(systemHealth.total_logs_24h || 0)}
+          value={formatNumber(systemHealth?.total_logs_24h || 0)}
           icon={FiActivity}
           color="blue"
           subtitle="Last 24 hours"
         />
         <SummaryCard
           title="Active Threats"
-          value={threats.critical_count + threats.high_count || 0}
+          value={(threats?.critical_count || 0) + (threats?.high_count || 0)}
           icon={FiAlertTriangle}
           color="red"
-          subtitle={`${threats.critical_count || 0} Critical, ${threats.high_count || 0} High`}
+          subtitle={`${threats?.critical_count || 0} Critical, ${threats?.high_count || 0} High`}
         />
         <SummaryCard
           title="Security Score"
@@ -190,7 +191,7 @@ const Dashboard = () => {
           value={healthStatus === 'healthy' ? 'Healthy' : 'Degraded'}
           icon={healthStatus === 'healthy' ? FiCheckCircle : FiXCircle}
           color={healthStatus === 'healthy' ? 'green' : 'red'}
-          subtitle={systemHealth.database_status || 'Unknown'}
+          subtitle={systemHealth?.database_status || 'Unknown'}
         />
       </div>
 
@@ -217,15 +218,15 @@ const Dashboard = () => {
           <h2 className="text-xl font-bold text-gray-900 mb-4">Threat Summary by Type</h2>
           <div className="grid grid-cols-3 gap-4">
             <div className="text-center p-4 bg-red-50 rounded-lg">
-              <p className="text-2xl font-bold text-red-600">{threats.total_brute_force || 0}</p>
+              <p className="text-2xl font-bold text-red-600">{threats?.total_brute_force || 0}</p>
               <p className="text-sm text-gray-600 mt-1">Brute Force</p>
             </div>
             <div className="text-center p-4 bg-orange-50 rounded-lg">
-              <p className="text-2xl font-bold text-orange-600">{threats.total_ddos || 0}</p>
+              <p className="text-2xl font-bold text-orange-600">{threats?.total_ddos || 0}</p>
               <p className="text-sm text-gray-600 mt-1">DDoS</p>
             </div>
             <div className="text-center p-4 bg-yellow-50 rounded-lg">
-              <p className="text-2xl font-bold text-yellow-600">{threats.total_port_scan || 0}</p>
+              <p className="text-2xl font-bold text-yellow-600">{threats?.total_port_scan || 0}</p>
               <p className="text-sm text-gray-600 mt-1">Port Scan</p>
             </div>
           </div>
@@ -235,19 +236,19 @@ const Dashboard = () => {
           <h2 className="text-xl font-bold text-gray-900 mb-4">Threat Summary by Severity</h2>
           <div className="grid grid-cols-2 gap-4">
             <div className="text-center p-4 bg-red-50 rounded-lg">
-              <p className="text-2xl font-bold text-red-600">{threats.critical_count || 0}</p>
+              <p className="text-2xl font-bold text-red-600">{threats?.critical_count || 0}</p>
               <p className="text-sm text-gray-600 mt-1">Critical</p>
             </div>
             <div className="text-center p-4 bg-orange-50 rounded-lg">
-              <p className="text-2xl font-bold text-orange-600">{threats.high_count || 0}</p>
+              <p className="text-2xl font-bold text-orange-600">{threats?.high_count || 0}</p>
               <p className="text-sm text-gray-600 mt-1">High</p>
             </div>
             <div className="text-center p-4 bg-yellow-50 rounded-lg">
-              <p className="text-2xl font-bold text-yellow-600">{threats.medium_count || 0}</p>
+              <p className="text-2xl font-bold text-yellow-600">{threats?.medium_count || 0}</p>
               <p className="text-sm text-gray-600 mt-1">Medium</p>
             </div>
             <div className="text-center p-4 bg-green-50 rounded-lg">
-              <p className="text-2xl font-bold text-green-600">{threats.low_count || 0}</p>
+              <p className="text-2xl font-bold text-green-600">{threats?.low_count || 0}</p>
               <p className="text-sm text-gray-600 mt-1">Low</p>
             </div>
           </div>
@@ -258,12 +259,12 @@ const Dashboard = () => {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
         <div className="bg-white rounded-lg shadow-sm p-6">
           <h2 className="text-xl font-bold text-gray-900 mb-4">Logs Over Time ( Last 24 hours ) </h2>
-          <LogsOverTimeChart data={stats.logs_by_hour || []} />
+          <LogsOverTimeChart data={stats?.logs_by_hour || []} />
         </div>
 
         <div className="bg-white rounded-lg shadow-sm p-6">
           <h2 className="text-xl font-bold text-gray-900 mb-4">Severity Distribution</h2>
-          <SeverityDistributionChart data={stats.severity_counts || {}} />
+          <SeverityDistributionChart data={stats?.severity_counts || {}} />
         </div>
       </div>
 
@@ -271,12 +272,12 @@ const Dashboard = () => {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
         <div className="bg-white rounded-lg shadow-sm p-6">
           <h2 className="text-xl font-bold text-gray-900 mb-4">Event Types</h2>
-          <EventTypesChart data={stats.event_type_counts || {}} />
+          <EventTypesChart data={stats?.event_type_counts || {}} />
         </div>
 
         <div className="bg-white rounded-lg shadow-sm p-6">
           <h2 className="text-xl font-bold text-gray-900 mb-4">Protocol Usage</h2>
-          <ProtocolUsageChart data={stats.protocol_counts || {}} />
+          <ProtocolUsageChart data={stats?.protocol_counts || {}} />
         </div>
       </div>
 

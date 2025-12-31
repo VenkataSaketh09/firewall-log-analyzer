@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional, List, Dict
 from pymongo import DESCENDING
 from app.db.mongo import logs_collection
@@ -26,7 +26,7 @@ def detect_brute_force(
     """
     # Set default time range to last 24 hours if not specified
     if end_date is None:
-        end_date = datetime.utcnow()
+        end_date = datetime.now(timezone.utc)
     if start_date is None:
         start_date = end_date - timedelta(hours=24)
     
@@ -157,7 +157,7 @@ def get_brute_force_timeline(ip: str, start_date: Optional[datetime] = None, end
         Dictionary with timeline information
     """
     if end_date is None:
-        end_date = datetime.utcnow()
+        end_date = datetime.now(timezone.utc)
     if start_date is None:
         start_date = end_date - timedelta(hours=24)
     

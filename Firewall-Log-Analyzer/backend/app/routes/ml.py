@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, Any, Dict
 
 from fastapi import APIRouter, HTTPException, BackgroundTasks, Body
@@ -34,16 +34,16 @@ def _run_retrain(train_anomaly: bool, train_classifier: bool) -> None:
     global _LAST_RETRAIN
     requested = {"train_anomaly": train_anomaly, "train_classifier": train_classifier}
     run_id = start_training_run(requested)
-    _LAST_RETRAIN = {"status": "running", "started_at": datetime.utcnow().isoformat(), "finished_at": None, "error": None, "run_id": run_id}
+    _LAST_RETRAIN = {"status": "running", "started_at": datetime.now(timezone.utc).isoformat(), "finished_at": None, "error": None, "run_id": run_id}
     try:
         payload = run_retrain(train_anomaly, train_classifier, run_id=run_id)
         _LAST_RETRAIN["status"] = "completed"
-        _LAST_RETRAIN["finished_at"] = datetime.utcnow().isoformat()
+        _LAST_RETRAIN["finished_at"] = datetime.now(timezone.utc).isoformat()
         _LAST_RETRAIN["versions"] = {"pre": payload.get("pre_version"), "post": payload.get("post_version")}
         finish_training_run(run_id, status="completed", results=payload)
     except Exception as e:
         _LAST_RETRAIN["status"] = "failed"
-        _LAST_RETRAIN["finished_at"] = datetime.utcnow().isoformat()
+        _LAST_RETRAIN["finished_at"] = datetime.now(timezone.utc).isoformat()
         _LAST_RETRAIN["error"] = str(e)
         finish_training_run(run_id, status="failed", error=str(e))
 

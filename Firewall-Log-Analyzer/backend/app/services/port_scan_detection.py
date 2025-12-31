@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional, List, Dict
 from collections import defaultdict
 
@@ -32,7 +32,7 @@ def detect_port_scan(
         List of detections sorted by severity/unique ports
     """
     if end_date is None:
-        end_date = datetime.utcnow()
+        end_date = datetime.now(timezone.utc)
     if start_date is None:
         start_date = end_date - timedelta(hours=24)
 

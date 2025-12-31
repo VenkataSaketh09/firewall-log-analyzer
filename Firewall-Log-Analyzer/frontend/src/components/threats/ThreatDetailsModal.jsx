@@ -14,7 +14,8 @@ const ThreatDetailsModal = ({ threat, isOpen, onClose, ipTimelineData = [] }) =>
     if (isOpen && threat?.source_ip) {
       fetchIPReputation(threat.source_ip, { use_cache: true });
     }
-  }, [isOpen, threat]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, threat?.source_ip]);
 
   const isPrivateIp = (ip) => {
     if (!ip) return false;

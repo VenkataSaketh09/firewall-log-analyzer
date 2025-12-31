@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, HTTPException
 from pymongo import DESCENDING
 from app.schemas.dashboard_schema import (
@@ -131,7 +131,7 @@ def get_dashboard_summary():
             threats=threat_summary,
             top_ips=top_ips,
             system_health=system_health,
-            generated_at=datetime.utcnow()
+            generated_at=datetime.now(timezone.utc)
         )
         
     except Exception as e:

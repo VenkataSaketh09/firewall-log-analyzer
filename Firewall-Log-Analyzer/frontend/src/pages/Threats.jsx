@@ -124,7 +124,7 @@ const Threats = () => {
     });
   };
 
-  const fetchThreats = async () => {
+  const fetchThreats = React.useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
@@ -146,18 +146,19 @@ const Threats = () => {
       setThreats(normalizeThreats(activeTab, data));
     } catch (err) {
       console.error('Error fetching threats:', err);
-      setError(err.message || 'Failed to load threats');
+      const errorMessage = err?.response?.data?.detail || err?.userMessage || err?.message || 'Failed to load threats';
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }
-  };
+  }, [activeTab, filters]);
 
   useEffect(() => {
     fetchThreats();
-  }, [activeTab]);
+  }, [fetchThreats]);
 
   useEffect(() => {
-    // best-effort status fetch (don’t block page if ML is down)
+    // best-effort status fetch (don't block page if ML is down)
     (async () => {
       try {
         const s = await getMLStatus();
@@ -167,15 +168,6 @@ const Threats = () => {
       }
     })();
   }, []);
-
-  // Debounce filter changes
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      fetchThreats();
-    }, 500);
-
-    return () => clearTimeout(timer);
-  }, [filters]);
 
   const handleFilterChange = (key, value) => {
     setFilters((prev) => ({ ...prev, [key]: value }));
@@ -262,7 +254,8 @@ const Threats = () => {
       document.body.removeChild(a);
     } catch (err) {
       console.error('Error exporting threats:', err);
-      alert('Failed to export threats. Please try again.');
+      const errorMessage = err?.response?.data?.detail || err?.userMessage || err?.message || 'Failed to export threats';
+      alert(`Failed to export threats: ${errorMessage}`);
     }
   };
 

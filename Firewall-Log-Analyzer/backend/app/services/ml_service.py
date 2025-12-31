@@ -13,7 +13,7 @@ from __future__ import annotations
 import os
 import sys
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
@@ -149,7 +149,7 @@ class MLService:
         event_type: Optional[str],
         raw_log: Optional[str],
     ) -> Dict[str, Any]:
-        dt = timestamp or datetime.utcnow()
+        dt = timestamp or datetime.now(timezone.utc)
         return {
             # Keys used by ml_engine predictor's "raw log row" heuristic
             "Month": _month_abbr(dt),
@@ -175,6 +175,9 @@ class MLService:
         if self.cache_features:
             cached = cache_get_features(cache_key)
             if cached is not None:
+                # Remove time_since_last from cached data if present (legacy cache entries)
+                if 'time_since_last' in cached:
+                    cached = {k: v for k, v in cached.items() if k != 'time_since_last'}
                 return cached
 
         extractor = self._FeatureExtractor()
@@ -182,8 +185,60 @@ class MLService:
 
         df = pd.DataFrame([ml_input])
         feat_df = extractor.extract_features(df)
+        # #region agent log
+        try:
+            with open('/home/nulumohan/firewall-log-analyzer/Firewall-Log-Analyzer/.cursor/debug.log', 'a') as f:
+                f.write(json.dumps({
+                    "sessionId": "debug-session",
+                    "runId": "run1",
+                    "hypothesisId": "A",
+                    "location": "ml_service.py:_get_or_compute_feature_row:after_extract",
+                    "message": "after extract_features",
+                    "data": {
+                        "feat_df_columns": list(feat_df.columns)[:10],
+                        "has_time_since_last": "time_since_last" in feat_df.columns
+                    },
+                    "timestamp": int(__import__('time').time() * 1000)
+                }) + '\n')
+        except: pass
+        # #endregion
         X, _ = extractor.get_feature_matrix(feat_df)
+        # #region agent log
+        try:
+            with open('/home/nulumohan/firewall-log-analyzer/Firewall-Log-Analyzer/.cursor/debug.log', 'a') as f:
+                f.write(json.dumps({
+                    "sessionId": "debug-session",
+                    "runId": "run1",
+                    "hypothesisId": "A",
+                    "location": "ml_service.py:_get_or_compute_feature_row:after_get_matrix",
+                    "message": "after get_feature_matrix",
+                    "data": {
+                        "X_columns": list(X.columns)[:10],
+                        "has_time_since_last": "time_since_last" in X.columns,
+                        "X_shape": list(X.shape)
+                    },
+                    "timestamp": int(__import__('time').time() * 1000)
+                }) + '\n')
+        except: pass
+        # #endregion
         row = X.iloc[0].to_dict()
+        # #region agent log
+        try:
+            with open('/home/nulumohan/firewall-log-analyzer/Firewall-Log-Analyzer/.cursor/debug.log', 'a') as f:
+                f.write(json.dumps({
+                    "sessionId": "debug-session",
+                    "runId": "run1",
+                    "hypothesisId": "A",
+                    "location": "ml_service.py:_get_or_compute_feature_row:before_return",
+                    "message": "before returning row",
+                    "data": {
+                        "row_keys": list(row.keys())[:10],
+                        "has_time_since_last": "time_since_last" in row
+                    },
+                    "timestamp": int(__import__('time').time() * 1000)
+                }) + '\n')
+        except: pass
+        # #endregion
 
         if self.cache_features:
             cache_set_features(cache_key, row)
@@ -246,6 +301,28 @@ class MLService:
 
             import pandas as pd
             X = pd.DataFrame([feature_row])
+            # Drop time_since_last if present (should be excluded by get_feature_matrix, but handle cached data)
+            if 'time_since_last' in X.columns:
+                X = X.drop(columns=['time_since_last'])
+            # #region agent log
+            import json
+            try:
+                with open('/home/nulumohan/firewall-log-analyzer/Firewall-Log-Analyzer/.cursor/debug.log', 'a') as f:
+                    f.write(json.dumps({
+                        "sessionId": "debug-session",
+                        "runId": "run1",
+                        "hypothesisId": "A",
+                        "location": "ml_service.py:score:before_transform",
+                        "message": "before scaler.transform",
+                        "data": {
+                            "X_columns": list(X.columns),
+                            "has_time_since_last": "time_since_last" in X.columns,
+                            "feature_row_keys": list(feature_row.keys())[:10]
+                        },
+                        "timestamp": int(__import__('time').time() * 1000)
+                    }) + '\n')
+            except: pass
+            # #endregion
             X_scaled = self._models.scaler.transform(X).to_numpy()
 
             anomaly_score = None
@@ -312,10 +389,32 @@ class MLService:
                 reasoning=reasoning,
             )
         except Exception as e:
+            # Even on failure, compute a fallback risk score from hints
+            reasoning = [f"ml.error={str(e)}", "ML scoring failed; falling back to rules"]
+            fallback_risk = None
+            fallback_label = None
+            fallback_confidence = None
+            
+            if threat_type_hint or severity_hint:
+                fallback_label = str(threat_type_hint) if threat_type_hint else None
+                fallback_confidence = _severity_to_confidence(severity_hint or "")
+                label_weight = {
+                    "NORMAL": 0.10,
+                    "SUSPICIOUS": 0.60,
+                    "BRUTE_FORCE": 0.80,
+                    "DDOS": 0.90,
+                    "PORT_SCAN": 0.90,
+                }.get((fallback_label or "").upper(), 0.50)
+                fallback_risk = 100.0 * _clip01(0.45 * fallback_confidence * label_weight)
+                reasoning.append(f"fallback.risk_score={fallback_risk:.1f}")
+            
             result = MLResult(
                 ml_enabled=True,
                 ml_available=False,
-                reasoning=["ML scoring failed; falling back to rules"],
+                predicted_label=fallback_label,
+                confidence=fallback_confidence,
+                risk_score=fallback_risk,
+                reasoning=reasoning,
                 error=str(e),
             )
         # Store prediction record (best-effort)

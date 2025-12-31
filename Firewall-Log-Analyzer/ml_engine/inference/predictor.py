@@ -33,15 +33,68 @@ def _build_feature_matrix(df_or_features: Union[pd.DataFrame, Dict[str, Any], pd
     """
     df = _to_dataframe(df_or_features)
 
+    # #region agent log
+    import json
+    try:
+        with open('/home/nulumohan/firewall-log-analyzer/Firewall-Log-Analyzer/.cursor/debug.log', 'a') as f:
+            f.write(json.dumps({
+                "sessionId": "debug-session",
+                "runId": "run1",
+                "hypothesisId": "A",
+                "location": "predictor.py:_build_feature_matrix:entry",
+                "message": "_build_feature_matrix called",
+                "data": {
+                    "input_columns": list(df.columns),
+                    "has_time_since_last": "time_since_last" in df.columns
+                },
+                "timestamp": int(__import__('time').time() * 1000)
+            }) + '\n')
+    except: pass
+    # #endregion
+
     # Heuristic: if it looks like raw logs, extract engineered features.
     raw_cols = {"Content", "EventId", "Component", "Month", "Date", "Time", "EventTemplate"}
     if len(raw_cols.intersection(set(df.columns))) >= 2:
         extractor = FeatureExtractor()
         feat_df = extractor.extract_features(df)
         X, _ = extractor.get_feature_matrix(feat_df)
+        # #region agent log
+        try:
+            with open('/home/nulumohan/firewall-log-analyzer/Firewall-Log-Analyzer/.cursor/debug.log', 'a') as f:
+                f.write(json.dumps({
+                    "sessionId": "debug-session",
+                    "runId": "run1",
+                    "hypothesisId": "A",
+                    "location": "predictor.py:_build_feature_matrix:raw_path",
+                    "message": "raw logs path - after get_feature_matrix",
+                    "data": {
+                        "output_columns": list(X.columns),
+                        "has_time_since_last": "time_since_last" in X.columns
+                    },
+                    "timestamp": int(__import__('time').time() * 1000)
+                }) + '\n')
+        except: pass
+        # #endregion
         return X
 
     # Otherwise assume it's already a feature matrix
+    # #region agent log
+    try:
+        with open('/home/nulumohan/firewall-log-analyzer/Firewall-Log-Analyzer/.cursor/debug.log', 'a') as f:
+            f.write(json.dumps({
+                "sessionId": "debug-session",
+                "runId": "run1",
+                "hypothesisId": "A",
+                "location": "predictor.py:_build_feature_matrix:feature_matrix_path",
+                "message": "assumed feature matrix path - returning copy",
+                "data": {
+                    "output_columns": list(df.columns),
+                    "has_time_since_last": "time_since_last" in df.columns
+                },
+                "timestamp": int(__import__('time').time() * 1000)
+            }) + '\n')
+    except: pass
+    # #endregion
     return df.copy()
 
 

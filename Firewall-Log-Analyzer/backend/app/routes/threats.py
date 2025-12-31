@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, Literal
 import csv
 import io
@@ -96,8 +96,25 @@ def get_brute_force_detections(
     detailed attack timeline information.
     """
     try:
-        from app.services.ml_service import ml_service
-        ml_service.initialize()
+        # Initialize ML service only if needed
+        ml_service_available = False
+        ml_service = None
+        if include_ml:
+            try:
+                from app.services.ml_service import ml_service
+                # Initialize ML service (will use cache if already initialized)
+                # Wrap in try-except to prevent hanging if models are missing
+                ml_service.initialize()
+                # Check if ML is actually available (initialized and no errors)
+                ml_service_available = (
+                    hasattr(ml_service, '_initialized') and 
+                    ml_service._initialized and 
+                    (not hasattr(ml_service, '_last_error') or ml_service._last_error is None)
+                )
+            except Exception as e:
+                # If ML initialization fails, continue without ML
+                ml_service_available = False
+                ml_service = None
 
         detections = detect_brute_force(
             time_window_minutes=time_window_minutes,
@@ -140,52 +157,63 @@ def get_brute_force_detections(
                     severity = enhance_severity_with_reputation(severity, rep_data)
             
             model = BruteForceDetection(
-                BruteForceDetection(
-                    source_ip=detected_ip,
-                    total_attempts=detection["total_attempts"],
-                    unique_usernames_attempted=detection["unique_usernames_attempted"],
-                    usernames_attempted=detection["usernames_attempted"],
-                    first_attempt=detection["first_attempt"],
-                    last_attempt=detection["last_attempt"],
-                    attack_windows=attack_windows,
-                    severity=severity,
-                    virustotal=ip_reputation
-                )
+                source_ip=detected_ip,
+                total_attempts=detection["total_attempts"],
+                unique_usernames_attempted=detection["unique_usernames_attempted"],
+                usernames_attempted=detection["usernames_attempted"],
+                first_attempt=detection["first_attempt"],
+                last_attempt=detection["last_attempt"],
+                attack_windows=attack_windows,
+                severity=severity,
+                virustotal=ip_reputation
             )
 
             if include_ml:
-                # Representative log: we only have log_id list in windows; use a synthetic log line hinting the behavior.
-                raw_hint = detection.get("sample_raw_log") or f"SSH failed login brute force suspected from {detected_ip}"
-                ml = ml_service.score(
-                    source_ip=detected_ip,
-                    threat_type_hint="BRUTE_FORCE",
-                    severity_hint=severity,
-                    timestamp=detection.get("last_attempt"),
-                    log_source=detection.get("sample_log_source") or "auth.log",
-                    event_type=detection.get("sample_event_type") or "SSH_FAILED_LOGIN",
-                    raw_log=raw_hint,
-                    context={"threat": "brute_force", "source_ip": detected_ip},
-                )
-                model.ml_anomaly_score = ml.anomaly_score
-                model.ml_predicted_label = ml.predicted_label
-                model.ml_confidence = ml.confidence
-                model.ml_risk_score = ml.risk_score
-                model.ml_reasoning = ml.reasoning or []
+                try:
+                    # Representative log: we only have log_id list in windows; use a synthetic log line hinting the behavior.
+                    raw_hint = detection.get("sample_raw_log") or f"SSH failed login brute force suspected from {detected_ip}"
+                    ml = ml_service.score(
+                        source_ip=detected_ip,
+                        threat_type_hint="BRUTE_FORCE",
+                        severity_hint=severity,
+                        timestamp=detection.get("last_attempt"),
+                        log_source=detection.get("sample_log_source") or "auth.log",
+                        event_type=detection.get("sample_event_type") or "SSH_FAILED_LOGIN",
+                        raw_log=raw_hint,
+                        context={"threat": "brute_force", "source_ip": detected_ip},
+                    )
+                    # Always attach ML data, even if ml_available is False (partial failure)
+                    model.ml_anomaly_score = ml.anomaly_score
+                    model.ml_predicted_label = ml.predicted_label
+                    model.ml_confidence = ml.confidence
+                    model.ml_risk_score = ml.risk_score
+                    model.ml_reasoning = ml.reasoning or []
 
-                # Reduce false positives conservatively: if ML is strongly NORMAL and low anomaly, downgrade severity
-                if (
-                    (ml.predicted_label or "").upper() == "NORMAL"
-                    and (ml.confidence or 0.0) >= 0.80
-                    and (ml.anomaly_score or 0.0) <= 0.30
-                ):
-                    model.severity = _downgrade_severity(model.severity)
-                    model.ml_reasoning.append(f"severity_downgraded_to={model.severity}")
+                    # Reduce false positives conservatively: if ML is strongly NORMAL and low anomaly, downgrade severity
+                    if (
+                        ml.ml_available
+                        and (ml.predicted_label or "").upper() == "NORMAL"
+                        and (ml.confidence or 0.0) >= 0.80
+                        and (ml.anomaly_score or 0.0) <= 0.30
+                    ):
+                        model.severity = _downgrade_severity(model.severity)
+                        model.ml_reasoning.append(f"severity_downgraded_to={model.severity}")
+                except Exception as ml_error:
+                    # If ML scoring fails completely, still attach error info for debugging
+                    model.ml_reasoning = [f"ML scoring error: {str(ml_error)}"]
+                    # Compute a basic fallback risk score using severity
+                    severity_map = {"CRITICAL": 0.95, "HIGH": 0.85, "MEDIUM": 0.70, "LOW": 0.55}
+                    fallback_conf = severity_map.get((severity or "").upper(), 0.50)
+                    label_weight = 0.80  # BRUTE_FORCE weight
+                    model.ml_risk_score = 100.0 * max(0.0, min(1.0, 0.45 * fallback_conf * label_weight))
+                    model.ml_predicted_label = "BRUTE_FORCE"
+                    model.ml_confidence = fallback_conf
 
             detection_models.append(model)
         
         # Determine time range for response
         if end_date is None:
-            end_date = datetime.utcnow()
+            end_date = datetime.now(timezone.utc)
         if start_date is None:
             start_date = end_date.replace(hour=0, minute=0, second=0, microsecond=0)
         
@@ -204,7 +232,7 @@ def get_brute_force_detections(
         if format == "json":
             return _json_download(
                 response_model.model_dump(),
-                filename=f"brute_force_threats_{datetime.utcnow().date().isoformat()}.json",
+                filename=f"brute_force_threats_{datetime.now(timezone.utc).date().isoformat()}.json",
             )
         if format == "csv":
             output = io.StringIO()
@@ -233,7 +261,7 @@ def get_brute_force_detections(
                 )
             return _csv_download(
                 output.getvalue(),
-                filename=f"brute_force_threats_{datetime.utcnow().date().isoformat()}.csv",
+                filename=f"brute_force_threats_{datetime.now(timezone.utc).date().isoformat()}.csv",
             )
 
         return response_model
@@ -337,7 +365,7 @@ def detect_brute_force_post(
             detection_models.append(model)
         
         # Determine time range for response
-        end_date = config.end_date if config.end_date else datetime.utcnow()
+        end_date = config.end_date if config.end_date else datetime.now(timezone.utc)
         start_date = config.start_date if config.start_date else end_date.replace(hour=0, minute=0, second=0, microsecond=0)
         
         return BruteForceDetectionsResponse(
@@ -486,30 +514,42 @@ def get_ddos_detections(
             )
 
             if include_ml:
-                sample_ip = (detection.get("source_ips") or [None])[0]
-                # DDoS detection is aggregate; use a generic hint (or later we can sample a real raw log)
-                raw_hint = f"Traffic flood suspected from {sample_ip or 'unknown'}"
-                ml = ml_service.score(
-                    source_ip=sample_ip,
-                    threat_type_hint="DDOS",
-                    severity_hint=model.severity,
-                    timestamp=detection.get("last_request"),
-                    log_source="ufw.log",
-                    event_type="DDOS_FLOOD",
-                    raw_log=raw_hint,
-                    context={"threat": "ddos", "source_ip": sample_ip, "attack_type": model.attack_type},
-                )
-                model.ml_anomaly_score = ml.anomaly_score
-                model.ml_predicted_label = ml.predicted_label
-                model.ml_confidence = ml.confidence
-                model.ml_risk_score = ml.risk_score
-                model.ml_reasoning = ml.reasoning or []
+                try:
+                    sample_ip = (detection.get("source_ips") or [None])[0]
+                    # DDoS detection is aggregate; use a generic hint (or later we can sample a real raw log)
+                    raw_hint = f"Traffic flood suspected from {sample_ip or 'unknown'}"
+                    ml = ml_service.score(
+                        source_ip=sample_ip,
+                        threat_type_hint="DDOS",
+                        severity_hint=model.severity,
+                        timestamp=detection.get("last_request"),
+                        log_source="ufw.log",
+                        event_type="DDOS_FLOOD",
+                        raw_log=raw_hint,
+                        context={"threat": "ddos", "source_ip": sample_ip, "attack_type": model.attack_type},
+                    )
+                    # Always attach ML data, even if ml_available is False (partial failure)
+                    model.ml_anomaly_score = ml.anomaly_score
+                    model.ml_predicted_label = ml.predicted_label
+                    model.ml_confidence = ml.confidence
+                    model.ml_risk_score = ml.risk_score
+                    model.ml_reasoning = ml.reasoning or []
+                except Exception as ml_error:
+                    # If ML scoring fails completely, still attach error info for debugging
+                    model.ml_reasoning = [f"ML scoring error: {str(ml_error)}"]
+                    # Compute a basic fallback risk score using severity
+                    severity_map = {"CRITICAL": 0.95, "HIGH": 0.85, "MEDIUM": 0.70, "LOW": 0.55}
+                    fallback_conf = severity_map.get((model.severity or "").upper(), 0.50)
+                    label_weight = 0.90  # DDOS weight
+                    model.ml_risk_score = 100.0 * max(0.0, min(1.0, 0.45 * fallback_conf * label_weight))
+                    model.ml_predicted_label = "DDOS"
+                    model.ml_confidence = fallback_conf
 
             detection_models.append(model)
         
         # Determine time range for response
         if end_date is None:
-            end_date = datetime.utcnow()
+            end_date = datetime.now(timezone.utc)
         if start_date is None:
             start_date = end_date.replace(hour=0, minute=0, second=0, microsecond=0)
         
@@ -530,7 +570,7 @@ def get_ddos_detections(
         if format == "json":
             return _json_download(
                 response_model.model_dump(),
-                filename=f"ddos_threats_{datetime.utcnow().date().isoformat()}.json",
+                filename=f"ddos_threats_{datetime.now(timezone.utc).date().isoformat()}.json",
             )
         if format == "csv":
             output = io.StringIO()
@@ -567,7 +607,7 @@ def get_ddos_detections(
                 )
             return _csv_download(
                 output.getvalue(),
-                filename=f"ddos_threats_{datetime.utcnow().date().isoformat()}.csv",
+                filename=f"ddos_threats_{datetime.now(timezone.utc).date().isoformat()}.csv",
             )
 
         return response_model
@@ -650,28 +690,40 @@ def get_port_scan_detections(
             )
 
             if include_ml:
-                raw_hint = f"Port scan suspected from {detected_ip} against {model.unique_ports_attempted} ports"
-                ml = ml_service.score(
-                    source_ip=detected_ip,
-                    threat_type_hint="PORT_SCAN",
-                    severity_hint=model.severity,
-                    timestamp=detection.get("last_attempt"),
-                    log_source="ufw.log",
-                    event_type="PORT_SCAN",
-                    raw_log=raw_hint,
-                    context={"threat": "port_scan", "source_ip": detected_ip},
-                )
-                model.ml_anomaly_score = ml.anomaly_score
-                model.ml_predicted_label = ml.predicted_label
-                model.ml_confidence = ml.confidence
-                model.ml_risk_score = ml.risk_score
-                model.ml_reasoning = ml.reasoning or []
+                try:
+                    raw_hint = f"Port scan suspected from {detected_ip} against {model.unique_ports_attempted} ports"
+                    ml = ml_service.score(
+                        source_ip=detected_ip,
+                        threat_type_hint="PORT_SCAN",
+                        severity_hint=model.severity,
+                        timestamp=detection.get("last_attempt"),
+                        log_source="ufw.log",
+                        event_type="PORT_SCAN",
+                        raw_log=raw_hint,
+                        context={"threat": "port_scan", "source_ip": detected_ip},
+                    )
+                    # Always attach ML data, even if ml_available is False (partial failure)
+                    model.ml_anomaly_score = ml.anomaly_score
+                    model.ml_predicted_label = ml.predicted_label
+                    model.ml_confidence = ml.confidence
+                    model.ml_risk_score = ml.risk_score
+                    model.ml_reasoning = ml.reasoning or []
+                except Exception as ml_error:
+                    # If ML scoring fails completely, still attach error info for debugging
+                    model.ml_reasoning = [f"ML scoring error: {str(ml_error)}"]
+                    # Compute a basic fallback risk score using severity
+                    severity_map = {"CRITICAL": 0.95, "HIGH": 0.85, "MEDIUM": 0.70, "LOW": 0.55}
+                    fallback_conf = severity_map.get((model.severity or "").upper(), 0.50)
+                    label_weight = 0.90  # PORT_SCAN weight
+                    model.ml_risk_score = 100.0 * max(0.0, min(1.0, 0.45 * fallback_conf * label_weight))
+                    model.ml_predicted_label = "PORT_SCAN"
+                    model.ml_confidence = fallback_conf
 
             detection_models.append(model)
 
         # Determine time range for response
         if end_date is None:
-            end_date = datetime.utcnow()
+            end_date = datetime.now(timezone.utc)
         if start_date is None:
             start_date = end_date.replace(hour=0, minute=0, second=0, microsecond=0)
 
@@ -688,7 +740,7 @@ def get_port_scan_detections(
         if format == "json":
             return _json_download(
                 response_model.model_dump(),
-                filename=f"port_scan_threats_{datetime.utcnow().date().isoformat()}.json",
+                filename=f"port_scan_threats_{datetime.now(timezone.utc).date().isoformat()}.json",
             )
         if format == "csv":
             output = io.StringIO()
@@ -717,7 +769,7 @@ def get_port_scan_detections(
                 )
             return _csv_download(
                 output.getvalue(),
-                filename=f"port_scan_threats_{datetime.utcnow().date().isoformat()}.csv",
+                filename=f"port_scan_threats_{datetime.now(timezone.utc).date().isoformat()}.csv",
             )
 
         return response_model

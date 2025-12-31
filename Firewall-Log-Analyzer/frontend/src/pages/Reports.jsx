@@ -85,10 +85,11 @@ const Reports = () => {
       }
 
       // Extract report from response (API returns { report: SecurityReport })
-      setReport(data.report || data);
+      setReport(data?.report || data);
     } catch (err) {
       console.error('Error generating report:', err);
-      setError(err.message || 'Failed to generate report');
+      const errorMessage = err?.response?.data?.detail || err?.userMessage || err?.message || 'Failed to generate report';
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -134,7 +135,8 @@ const Reports = () => {
       document.body.removeChild(a);
     } catch (err) {
       console.error('Error exporting report:', err);
-      alert('Failed to export report. Please try again.');
+      const errorMessage = err?.response?.data?.detail || err?.userMessage || err?.message || 'Failed to export report';
+      alert(`Failed to export report: ${errorMessage}`);
     } finally {
       setLoading(false);
     }
@@ -163,7 +165,8 @@ const Reports = () => {
       alert('Report saved successfully!');
     } catch (err) {
       console.error('Error saving report:', err);
-      alert('Failed to save report. Please try again.');
+      const errorMessage = err?.response?.data?.detail || err?.userMessage || err?.message || 'Failed to save report';
+      alert(`Failed to save report: ${errorMessage}`);
     } finally {
       setLoading(false);
     }
