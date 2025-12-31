@@ -20,6 +20,7 @@ class ManualPredictRequest(BaseModel):
     event_type: Optional[str] = Field(None, description="Optional event type hint, e.g. SSH_FAILED_LOGIN")
     threat_type_hint: Optional[str] = Field(None, description="Optional rule-based label hint (BRUTE_FORCE/DDOS/PORT_SCAN)")
     severity_hint: Optional[str] = Field(None, description="Optional severity hint (CRITICAL/HIGH/MEDIUM/LOW)")
+    source_ip: Optional[str] = Field(None, description="Optional source IP address")
 
 
 class RetrainRequest(BaseModel):
@@ -56,6 +57,7 @@ def ml_status():
 @router.post("/predict")
 def manual_predict(body: ManualPredictRequest = Body(...)):
     result = ml_service.score(
+        source_ip=body.source_ip,
         threat_type_hint=body.threat_type_hint,
         severity_hint=body.severity_hint,
         timestamp=body.timestamp,

@@ -40,9 +40,10 @@ const Dashboard = () => {
   const fetchDashboardData = React.useCallback(async () => {
     try {
       setIsRefreshing(true);
+      // Get stats without date filter to show all-time data if 24h is empty
       const [dashboard, stats, logs, ml] = await Promise.all([
         getDashboardSummary(),
-        getLogsStatsSummary(),
+        getLogsStatsSummary(null, null), // No date filter - shows all data
         getRecentLogs(50),
         getMLStatus().catch(() => null),
       ]);
@@ -166,11 +167,19 @@ const Dashboard = () => {
       {/* Summary Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         <SummaryCard
-          title="Total Logs (24h)"
-          value={formatNumber(systemHealth?.total_logs_24h || 0)}
+          title="Total Logs"
+          value={formatNumber(
+            (systemHealth?.total_logs_24h || 0) > 0 
+              ? systemHealth.total_logs_24h 
+              : (systemHealth?.total_logs_all_time || 0)
+          )}
           icon={FiActivity}
           color="blue"
-          subtitle="Last 24 hours"
+          subtitle={
+            (systemHealth?.total_logs_24h || 0) > 0 
+              ? "Last 24 hours" 
+              : "All time"
+          }
         />
         <SummaryCard
           title="Active Threats"
@@ -258,8 +267,21 @@ const Dashboard = () => {
       {/* Charts Row 1 */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
         <div className="bg-white rounded-lg shadow-sm p-6">
-          <h2 className="text-xl font-bold text-gray-900 mb-4">Logs Over Time ( Last 24 hours ) </h2>
-          <LogsOverTimeChart data={stats?.logs_by_hour || []} />
+          <h2 className="text-xl font-bold text-gray-900 mb-4">
+            Logs Over Time
+            {stats?.logs_by_hour && stats.logs_by_hour.length > 0 && (
+              <span className="text-sm font-normal text-gray-500 ml-2">
+                ({stats.logs_by_hour.length > 24 ? 'All available data' : 'Last 24 hours'})
+              </span>
+            )}
+          </h2>
+          {stats?.logs_by_hour && stats.logs_by_hour.length > 0 ? (
+            <LogsOverTimeChart data={stats.logs_by_hour} />
+          ) : (
+            <div className="text-center py-8 text-gray-500">
+              <p>No log data available</p>
+            </div>
+          )}
         </div>
 
         <div className="bg-white rounded-lg shadow-sm p-6">

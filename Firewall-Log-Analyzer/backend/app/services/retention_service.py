@@ -83,7 +83,7 @@ def start_log_retention_worker(
     if not enabled:
         return
 
-    max_size_mb = int(max_size_mb or os.getenv("LOG_RETENTION_MAX_MB", "450"))
+    max_size_mb = int(max_size_mb or os.getenv("LOG_RETENTION_MAX_MB", "480"))
     interval_seconds = int(interval_seconds or os.getenv("LOG_RETENTION_INTERVAL_SECONDS", "300"))
     delete_batch_docs = int(delete_batch_docs or os.getenv("LOG_RETENTION_DELETE_BATCH_DOCS", "2000"))
 

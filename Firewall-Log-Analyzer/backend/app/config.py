@@ -29,7 +29,7 @@ def validate_environment():
         "INGESTION_API_KEY": os.getenv("INGESTION_API_KEY", "default-api-key-change-in-production"),
         "VIRUS_TOTAL_API_KEY": os.getenv("VIRUS_TOTAL_API_KEY"),
         "LOG_RETENTION_ENABLED": os.getenv("LOG_RETENTION_ENABLED", "true"),
-        "LOG_RETENTION_MAX_MB": os.getenv("LOG_RETENTION_MAX_MB", "450"),
+        "LOG_RETENTION_MAX_MB": os.getenv("LOG_RETENTION_MAX_MB", "480"),
         "RATE_LIMIT_REQUESTS": os.getenv("RATE_LIMIT_REQUESTS", "100"),
         "RATE_LIMIT_WINDOW": os.getenv("RATE_LIMIT_WINDOW", "60"),
     }

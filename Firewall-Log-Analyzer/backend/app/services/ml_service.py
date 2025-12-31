@@ -359,11 +359,46 @@ class MLService:
                 except Exception as e:
                     reasoning.append(f"ml.class_error={e}")
 
-            # If classifier unavailable or not applicable, fall back to hint + severity-derived confidence
-            if predicted_label is None and threat_type_hint:
-                predicted_label = str(threat_type_hint)
-                confidence = _severity_to_confidence(severity_hint or "")
-                reasoning.append(f"rule.label={predicted_label} conf_seed={confidence:.2f}")
+            # If classifier unavailable or not applicable, fall back to hint or infer from event_type
+            if predicted_label is None:
+                # Try threat_type_hint first
+                if threat_type_hint:
+                    predicted_label = str(threat_type_hint)
+                    confidence = _severity_to_confidence(severity_hint or "")
+                    reasoning.append(f"rule.label={predicted_label} conf_seed={confidence:.2f}")
+                # Otherwise, infer from event_type
+                elif event_type:
+                    event_upper = (event_type or "").upper()
+                    # Map event types to threat labels
+                    if "BRUTE_FORCE" in event_upper or "SSH_FAILED" in event_upper:
+                        predicted_label = "BRUTE_FORCE"
+                    elif "DDOS" in event_upper or "FLOOD" in event_upper:
+                        predicted_label = "DDOS"
+                    elif "PORT_SCAN" in event_upper or "SCAN" in event_upper:
+                        predicted_label = "PORT_SCAN"
+                    elif "SQL" in event_upper or "INJECTION" in event_upper:
+                        predicted_label = "SQL_INJECTION"
+                    elif "SUSPICIOUS" in event_upper:
+                        predicted_label = "SUSPICIOUS"
+                    elif "SSH_SUCCESS" in event_upper or "LOGIN_SUCCESS" in event_upper:
+                        predicted_label = "NORMAL"
+                    else:
+                        # Default based on severity
+                        if severity_hint and severity_hint.upper() in ["CRITICAL", "HIGH"]:
+                            predicted_label = "SUSPICIOUS"
+                        else:
+                            predicted_label = "NORMAL"
+                    
+                    confidence = _severity_to_confidence(severity_hint or "")
+                    reasoning.append(f"inferred.label={predicted_label} from event_type={event_type} conf={confidence:.2f}")
+                else:
+                    # Last resort: use severity-based default
+                    if severity_hint and severity_hint.upper() in ["CRITICAL", "HIGH"]:
+                        predicted_label = "SUSPICIOUS"
+                    else:
+                        predicted_label = "NORMAL"
+                    confidence = _severity_to_confidence(severity_hint or "")
+                    reasoning.append(f"default.label={predicted_label} from severity={severity_hint} conf={confidence:.2f}")
 
             # Compute risk score (0-100)
             # Risk is driven by anomaly score + confidence-weighted label severity.

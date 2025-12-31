@@ -207,19 +207,47 @@ def get_statistics(
         if item["_id"] is not None
     }
     
-    # Logs by hour (last 24 hours if no date range specified)
-    if not start_date and not end_date:
-        end_date = datetime.utcnow()
-        start_date = end_date - timedelta(hours=24)
+    # Logs by hour - if no date range, show last 7 days or all available data
+    hour_start_date = start_date
+    hour_end_date = end_date
+    
+    if not hour_start_date and not hour_end_date:
+        # Try to get last 7 days first
+        hour_end_date = datetime.utcnow()
+        hour_start_date = hour_end_date - timedelta(days=7)
+        
+        # Check if we have any logs in last 7 days
+        test_query = {
+            "timestamp": {
+                "$gte": hour_start_date,
+                "$lte": hour_end_date
+            }
+        }
+        has_recent_logs = logs_collection.count_documents(test_query) > 0
+        
+        # If no recent logs, expand to last 30 days, then all-time
+        if not has_recent_logs:
+            hour_start_date = hour_end_date - timedelta(days=30)
+            test_query = {
+                "timestamp": {
+                    "$gte": hour_start_date,
+                    "$lte": hour_end_date
+                }
+            }
+            has_recent_logs = logs_collection.count_documents(test_query) > 0
+            if not has_recent_logs:
+                # Show all available data - no date filter
+                hour_start_date = None
+                hour_end_date = None
     
     # Use $dateToString for compatibility with all MongoDB versions
     hour_query = {**query}
-    if start_date or end_date:
+    if hour_start_date or hour_end_date:
         hour_query["timestamp"] = {}
-        if start_date:
-            hour_query["timestamp"]["$gte"] = start_date
-        if end_date:
-            hour_query["timestamp"]["$lte"] = end_date
+        if hour_start_date:
+            hour_query["timestamp"]["$gte"] = hour_start_date
+        if hour_end_date:
+            hour_query["timestamp"]["$lte"] = hour_end_date
     
     hour_pipeline = [
         {"$match": hour_query},
