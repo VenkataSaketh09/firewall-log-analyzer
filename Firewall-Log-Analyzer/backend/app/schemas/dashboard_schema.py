@@ -36,6 +36,7 @@ class SystemHealth(BaseModel):
     """System health metrics"""
     database_status: str = Field(..., description="Status: healthy, degraded, or down")
     total_logs_24h: int = Field(0, description="Total logs in last 24 hours")
+    total_logs_all_time: int = Field(0, description="Total logs in database (all time)")
     high_severity_logs_24h: int = Field(0, description="High severity logs in last 24 hours")
     last_log_timestamp: Optional[datetime] = None
     uptime_seconds: Optional[float] = None

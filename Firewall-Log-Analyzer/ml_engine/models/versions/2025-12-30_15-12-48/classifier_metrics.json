@@ -1,0 +1,514 @@
+{
+  "dataset": {
+    "sha256": "7c86d7b0ecb961a25f00d9475a154df97613b9974f31ce142a146caa2017c71e",
+    "structured_csv": "dataset/Linux_2k.log_structured.csv"
+  },
+  "evaluations": [
+    {
+      "evaluated_at_utc": "2025-12-30T12:50:15.752687+00:00",
+      "test": {
+        "accuracy": 0.39666666666666667,
+        "classification_report": {
+          "BRUTE_FORCE": {
+            "f1-score": 0.31958762886597936,
+            "precision": 0.30392156862745096,
+            "recall": 0.33695652173913043,
+            "support": 92.0
+          },
+          "NORMAL": {
+            "f1-score": 0.21153846153846154,
+            "precision": 0.24444444444444444,
+            "recall": 0.1864406779661017,
+            "support": 59.0
+          },
+          "SUSPICIOUS": {
+            "f1-score": 0.5099337748344371,
+            "precision": 0.5032679738562091,
+            "recall": 0.5167785234899329,
+            "support": 149.0
+          },
+          "accuracy": 0.39666666666666667,
+          "macro avg": {
+            "f1-score": 0.347019955079626,
+            "precision": 0.35054466230936815,
+            "recall": 0.34672524106505503,
+            "support": 300.0
+          },
+          "weighted avg": {
+            "f1-score": 0.39287654512256814,
+            "precision": 0.39123311546840955,
+            "recall": 0.39666666666666667,
+            "support": 300.0
+          }
+        },
+        "confusion_matrix": [
+          [
+            31,
+            14,
+            47
+          ],
+          [
+            19,
+            11,
+            29
+          ],
+          [
+            52,
+            20,
+            77
+          ]
+        ],
+        "macro_avg": {
+          "f1": 0.347019955079626,
+          "precision": 0.35054466230936815,
+          "recall": 0.34672524106505503
+        },
+        "per_class": {
+          "BRUTE_FORCE": {
+            "f1": 0.31958762886597936,
+            "precision": 0.30392156862745096,
+            "recall": 0.33695652173913043,
+            "support": 92
+          },
+          "NORMAL": {
+            "f1": 0.21153846153846154,
+            "precision": 0.24444444444444444,
+            "recall": 0.1864406779661017,
+            "support": 59
+          },
+          "SUSPICIOUS": {
+            "f1": 0.5099337748344371,
+            "precision": 0.5032679738562091,
+            "recall": 0.5167785234899329,
+            "support": 149
+          }
+        }
+      }
+    }
+  ],
+  "feature_importance_top50": [
+    {
+      "feature": "burst_count",
+      "importance": 0.37424136612082687
+    },
+    {
+      "feature": "day_of_month",
+      "importance": 0.057601412128279836
+    },
+    {
+      "feature": "content_length",
+      "importance": 0.04716150145881227
+    },
+    {
+      "feature": "day_sin",
+      "importance": 0.035865303843531364
+    },
+    {
+      "feature": "events_per_hour",
+      "importance": 0.03477934612745273
+    },
+    {
+      "feature": "hour",
+      "importance": 0.03314868875700419
+    },
+    {
+      "feature": "hour_sin",
+      "importance": 0.03208472606555335
+    },
+    {
+      "feature": "hour_cos",
+      "importance": 0.03141853149056759
+    },
+    {
+      "feature": "day_of_week",
+      "importance": 0.03110577893297007
+    },
+    {
+      "feature": "ip_hash",
+      "importance": 0.026994484585800536
+    },
+    {
+      "feature": "day_cos",
+      "importance": 0.02498445819790837
+    },
+    {
+      "feature": "total_events_per_ip",
+      "importance": 0.022933870138770924
+    },
+    {
+      "feature": "event_id_hash",
+      "importance": 0.022337295536250086
+    },
+    {
+      "feature": "ip_frequency",
+      "importance": 0.0203441410025986
+    },
+    {
+      "feature": "template_length",
+      "importance": 0.019808470671453256
+    },
+    {
+      "feature": "template_word_count",
+      "importance": 0.016446730505248308
+    },
+    {
+      "feature": "is_burst",
+      "importance": 0.014841681466686322
+    },
+    {
+      "feature": "content_word_count",
+      "importance": 0.014825160441353976
+    },
+    {
+      "feature": "event_frequency",
+      "importance": 0.012427422614850058
+    },
+    {
+      "feature": "month",
+      "importance": 0.010578846262485894
+    },
+    {
+      "feature": "month_sin",
+      "importance": 0.009937068522025026
+    },
+    {
+      "feature": "is_weekend",
+      "importance": 0.008758724869801003
+    },
+    {
+      "feature": "month_cos",
+      "importance": 0.008440773475258446
+    },
+    {
+      "feature": "component_frequency",
+      "importance": 0.008378742425115524
+    },
+    {
+      "feature": "is_morning",
+      "importance": 0.00790140651057858
+    },
+    {
+      "feature": "is_business_hours",
+      "importance": 0.0074952712965476245
+    },
+    {
+      "feature": "component_hash",
+      "importance": 0.007051095678871549
+    },
+    {
+      "feature": "is_afternoon",
+      "importance": 0.0062393474199211926
+    },
+    {
+      "feature": "is_night",
+      "importance": 0.00612062933606358
+    },
+    {
+      "feature": "is_evening",
+      "importance": 0.005255882485437265
+    },
+    {
+      "feature": "ip_freq_category",
+      "importance": 0.004154543069514618
+    },
+    {
+      "feature": "is_auth_failure",
+      "importance": 0.0037916360639178707
+    },
+    {
+      "feature": "unique_events_per_ip",
+      "importance": 0.003511143060053971
+    },
+    {
+      "feature": "is_sshd",
+      "importance": 0.0029398910046626913
+    },
+    {
+      "feature": "has_user",
+      "importance": 0.0027402434541114722
+    },
+    {
+      "feature": "is_session_event",
+      "importance": 0.002541569099360926
+    },
+    {
+      "feature": "has_session",
+      "importance": 0.0024919064190218375
+    },
+    {
+      "feature": "ip_is_repeated",
+      "importance": 0.0023945828368434766
+    },
+    {
+      "feature": "has_rhost",
+      "importance": 0.0021703996387982634
+    },
+    {
+      "feature": "has_failure",
+      "importance": 0.0021339929800979784
+    },
+    {
+      "feature": "has_authentication",
+      "importance": 0.002057781835614045
+    },
+    {
+      "feature": "is_ftpd",
+      "importance": 0.0018951447512906426
+    },
+    {
+      "feature": "has_ip",
+      "importance": 0.0018158555538937472
+    },
+    {
+      "feature": "is_su",
+      "importance": 0.0017711958749387757
+    },
+    {
+      "feature": "has_connection",
+      "importance": 0.001677579844739601
+    },
+    {
+      "feature": "is_kernel",
+      "importance": 0.0012564575628289559
+    },
+    {
+      "feature": "is_connection_event",
+      "importance": 0.0011479185822867728
+    }
+  ],
+  "features": {
+    "count": 47,
+    "names": [
+      "ip_hash",
+      "ip_frequency",
+      "ip_is_repeated",
+      "ip_freq_category",
+      "has_ip",
+      "hour",
+      "day_of_week",
+      "month",
+      "day_of_month",
+      "hour_sin",
+      "hour_cos",
+      "day_sin",
+      "day_cos",
+      "month_sin",
+      "month_cos",
+      "is_weekend",
+      "is_business_hours",
+      "is_night",
+      "is_morning",
+      "is_afternoon",
+      "is_evening",
+      "event_id_hash",
+      "is_auth_failure",
+      "is_session_event",
+      "is_connection_event",
+      "component_hash",
+      "is_sshd",
+      "is_ftpd",
+      "is_kernel",
+      "is_su",
+      "content_length",
+      "content_word_count",
+      "has_user",
+      "has_rhost",
+      "has_failure",
+      "has_authentication",
+      "has_connection",
+      "has_session",
+      "template_length",
+      "template_word_count",
+      "unique_events_per_ip",
+      "total_events_per_ip",
+      "event_frequency",
+      "component_frequency",
+      "events_per_hour",
+      "is_burst",
+      "burst_count"
+    ]
+  },
+  "label_encoder": {
+    "classes": [
+      "BRUTE_FORCE",
+      "NORMAL",
+      "SUSPICIOUS"
+    ],
+    "path": "/home/saketh/firewall-log-analyzer/Firewall-Log-Analyzer/ml_engine/models/label_encoder.pkl"
+  },
+  "model": {
+    "params": {
+      "class_weight": "balanced",
+      "max_depth": 20,
+      "min_samples_leaf": 2,
+      "min_samples_split": 5,
+      "n_estimators": 100,
+      "n_jobs": -1,
+      "random_state": 42
+    },
+    "type": "RandomForestClassifier"
+  },
+  "resampling": null,
+  "splits": {
+    "test": 300,
+    "train": 1400,
+    "validation": 300
+  },
+  "test": {
+    "accuracy": 0.39666666666666667,
+    "classification_report": {
+      "BRUTE_FORCE": {
+        "f1-score": 0.31958762886597936,
+        "precision": 0.30392156862745096,
+        "recall": 0.33695652173913043,
+        "support": 92.0
+      },
+      "NORMAL": {
+        "f1-score": 0.21153846153846154,
+        "precision": 0.24444444444444444,
+        "recall": 0.1864406779661017,
+        "support": 59.0
+      },
+      "SUSPICIOUS": {
+        "f1-score": 0.5099337748344371,
+        "precision": 0.5032679738562091,
+        "recall": 0.5167785234899329,
+        "support": 149.0
+      },
+      "accuracy": 0.39666666666666667,
+      "macro avg": {
+        "f1-score": 0.347019955079626,
+        "precision": 0.35054466230936815,
+        "recall": 0.34672524106505503,
+        "support": 300.0
+      },
+      "weighted avg": {
+        "f1-score": 0.39287654512256814,
+        "precision": 0.39123311546840955,
+        "recall": 0.39666666666666667,
+        "support": 300.0
+      }
+    },
+    "confusion_matrix": [
+      [
+        31,
+        14,
+        47
+      ],
+      [
+        19,
+        11,
+        29
+      ],
+      [
+        52,
+        20,
+        77
+      ]
+    ],
+    "macro_avg": {
+      "f1": 0.347019955079626,
+      "precision": 0.35054466230936815,
+      "recall": 0.34672524106505503
+    },
+    "per_class": {
+      "BRUTE_FORCE": {
+        "f1": 0.31958762886597936,
+        "precision": 0.30392156862745096,
+        "recall": 0.33695652173913043,
+        "support": 92
+      },
+      "NORMAL": {
+        "f1": 0.21153846153846154,
+        "precision": 0.24444444444444444,
+        "recall": 0.1864406779661017,
+        "support": 59
+      },
+      "SUSPICIOUS": {
+        "f1": 0.5099337748344371,
+        "precision": 0.5032679738562091,
+        "recall": 0.5167785234899329,
+        "support": 149
+      }
+    }
+  },
+  "trained_at_utc": "2025-12-30T12:49:59.688845+00:00",
+  "validation": {
+    "accuracy": 0.4166666666666667,
+    "classification_report": {
+      "BRUTE_FORCE": {
+        "f1-score": 0.3263157894736842,
+        "precision": 0.3163265306122449,
+        "recall": 0.33695652173913043,
+        "support": 92.0
+      },
+      "NORMAL": {
+        "f1-score": 0.17307692307692307,
+        "precision": 0.2,
+        "recall": 0.15254237288135594,
+        "support": 59.0
+      },
+      "SUSPICIOUS": {
+        "f1-score": 0.5555555555555556,
+        "precision": 0.5414012738853503,
+        "recall": 0.5704697986577181,
+        "support": 149.0
+      },
+      "accuracy": 0.4166666666666667,
+      "macro avg": {
+        "f1-score": 0.3516494227020543,
+        "precision": 0.3525759348325317,
+        "recall": 0.35332289775940146,
+        "support": 300.0
+      },
+      "weighted avg": {
+        "f1-score": 0.410034562902984,
+        "precision": 0.4052361020841458,
+        "recall": 0.4166666666666667,
+        "support": 300.0
+      }
+    },
+    "confusion_matrix": [
+      [
+        31,
+        15,
+        46
+      ],
+      [
+        24,
+        9,
+        26
+      ],
+      [
+        43,
+        21,
+        85
+      ]
+    ],
+    "macro_avg": {
+      "f1": 0.3516494227020543,
+      "precision": 0.3525759348325317,
+      "recall": 0.35332289775940146
+    },
+    "per_class": {
+      "BRUTE_FORCE": {
+        "f1": 0.3263157894736842,
+        "precision": 0.3163265306122449,
+        "recall": 0.33695652173913043,
+        "support": 92
+      },
+      "NORMAL": {
+        "f1": 0.17307692307692307,
+        "precision": 0.2,
+        "recall": 0.15254237288135594,
+        "support": 59
+      },
+      "SUSPICIOUS": {
+        "f1": 0.5555555555555556,
+        "precision": 0.5414012738853503,
+        "recall": 0.5704697986577181,
+        "support": 149
+      }
+    }
+  }
+}

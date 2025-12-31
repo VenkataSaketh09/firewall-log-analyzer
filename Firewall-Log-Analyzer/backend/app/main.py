@@ -7,9 +7,13 @@ from app.routes.reports import router as reports_router
 from app.routes.ip_reputation import router as ip_reputation_router
 from app.routes.dashboard import router as dashboard_router
 from app.routes.alerts import router as alerts_router
+from app.routes.ml import router as ml_router
 from app.middleware.rate_limit import RateLimitMiddleware
 from app.config import validate_environment
 from app.services.retention_service import start_log_retention_worker
+from app.services.ml_service import ml_service
+from app.services.ml_auto_retrain_worker import start_auto_retrain_worker
+from app.services.log_ingestor import start_log_ingestion
 from datetime import datetime
 import sys
 
@@ -46,6 +50,7 @@ app.include_router(reports_router)
 app.include_router(ip_reputation_router)
 app.include_router(dashboard_router)
 app.include_router(alerts_router)
+app.include_router(ml_router)
 
 
 @app.on_event("startup")
@@ -54,12 +59,32 @@ async def startup_event():
     # Start log retention worker
     start_log_retention_worker()
     print("✓ Log retention worker started")
+    
+    # Start log ingestion service (auto-starts with server)
+    import threading
+    ingestion_thread = threading.Thread(target=start_log_ingestion, daemon=True, name="log-ingestion-service")
+    ingestion_thread.start()
+    print("✓ Log ingestion service started")
+    
+    # Initialize ML (best-effort)
+    if ml_service.initialize():
+        print("✓ ML service initialized")
+    else:
+        print("! ML service not available (falling back to rule-based)")
+    # Optional auto retraining (env-controlled)
+    start_auto_retrain_worker()
     print("✓ FastAPI application started successfully")
 
 
 @app.get("/health")
 def health_check():
     return {"status": "Backend is running"}
+
+
+@app.get("/health/ml")
+def ml_health_check():
+    status = ml_service.status()
+    return {"ml": status}
 
 
 @app.get("/")
