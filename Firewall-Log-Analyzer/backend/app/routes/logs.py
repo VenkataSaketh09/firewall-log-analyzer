@@ -27,10 +27,11 @@ def ingest_logs_endpoint(
     api_key: str = Security(verify_api_key)
 ):
     """
-    Ingest firewall logs from remote VMs or log sources.
+    Ingest firewall logs from the local VM's log files.
     
     This endpoint accepts raw log lines and automatically parses them using
     the appropriate parser (auth.log, ufw.log, iptables, syslog, sql.log).
+    Used for manual log ingestion or batch processing of log files.
     
     Requires API key authentication via X-API-Key header.
     

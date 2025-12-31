@@ -1,43 +1,108 @@
 import time
 import threading
+import os
 from app.services.auth_log_parser import parse_auth_log
 from app.services.ufw_log_parser import parse_ufw_log
+from app.services.iptables_parser import parse_iptables_log
+from app.services.syslog_parser import parse_syslog
+from app.services.sql_parser import parse_sql_log
 from app.db.mongo import logs_collection
 
+# Log file paths for network engineers
 AUTH_LOG = "/var/log/auth.log"
 UFW_LOG = "/var/log/ufw.log"
+KERN_LOG = "/var/log/kern.log"  # iptables/netfilter logs
+SYSLOG = "/var/log/syslog"  # General system logs
+MESSAGES = "/var/log/messages"  # Alternative syslog location
 
 def follow(file_path):
-    with open(file_path, "r") as f:
-        f.seek(0, 2)  # go to end
-        while True:
-            line = f.readline()
-            if not line:
-                time.sleep(1)
-                continue
-            yield line
+    """Follow a log file in real-time (tail -f equivalent)"""
+    if not os.path.exists(file_path):
+        print(f"Warning: Log file {file_path} does not exist. Skipping.")
+        return
+    
+    try:
+        with open(file_path, "r", errors='ignore') as f:
+            f.seek(0, 2)  # go to end
+            while True:
+                line = f.readline()
+                if not line:
+                    time.sleep(1)
+                    continue
+                yield line
+    except Exception as e:
+        print(f"Error reading {file_path}: {e}")
 
 def ingest_auth_logs():
+    """Ingest authentication logs (SSH, login attempts)"""
     for line in follow(AUTH_LOG):
         log = parse_auth_log(line)
         if log:
             logs_collection.insert_one(log)
-            print("AUTH LOG STORED:", log)
 
 def ingest_ufw_logs():
+    """Ingest UFW (Uncomplicated Firewall) logs"""
     for line in follow(UFW_LOG):
         log = parse_ufw_log(line)
         if log:
             logs_collection.insert_one(log)
-            print("UFW LOG STORED:", log)
+
+def ingest_kern_logs():
+    """Ingest kernel logs (iptables/netfilter firewall logs)"""
+    for line in follow(KERN_LOG):
+        # Only process iptables-related kernel logs
+        if "kernel:" in line and ("SRC=" in line or "iptables" in line.lower()):
+            log = parse_iptables_log(line)
+            if log:
+                logs_collection.insert_one(log)
+
+def ingest_syslog():
+    """Ingest general syslog entries (security events, SQL access, etc.)"""
+    for line in follow(SYSLOG):
+        # Skip if already processed by auth.log or kern.log
+        if "sshd" in line.lower() or "kernel:" in line:
+            continue
+        log = parse_syslog(line)
+        if log:
+            logs_collection.insert_one(log)
+
+def ingest_messages():
+    """Ingest /var/log/messages (alternative syslog location)"""
+    for line in follow(MESSAGES):
+        # Skip if already processed by other log files
+        if "sshd" in line.lower() or "kernel:" in line:
+            continue
+        log = parse_syslog(line)
+        if log:
+            logs_collection.insert_one(log)
 
 def start_log_ingestion():
-    auth_thread = threading.Thread(target=ingest_auth_logs, daemon=True)
-    ufw_thread = threading.Thread(target=ingest_ufw_logs, daemon=True)
-
-    auth_thread.start()
-    ufw_thread.start()
-
-    # keep main thread alive
+    """
+    Start real-time log ingestion from local VM log files.
+    Monitors multiple log sources useful for network engineers:
+    - auth.log: SSH and authentication events
+    - ufw.log: UFW firewall logs
+    - kern.log: iptables/netfilter firewall logs
+    - syslog: General system and security events
+    - messages: Alternative syslog location
+    """
+    threads = []
+    
+    # Start thread for each log source
+    log_sources = [
+        ("auth", ingest_auth_logs),
+        ("ufw", ingest_ufw_logs),
+        ("kern", ingest_kern_logs),
+        ("syslog", ingest_syslog),
+        ("messages", ingest_messages),
+    ]
+    
+    for name, func in log_sources:
+        thread = threading.Thread(target=func, daemon=True, name=f"log-ingestor-{name}")
+        thread.start()
+        threads.append(thread)
+        print(f"✓ Started log ingestion for {name}")
+    
+    # Keep main thread alive
     while True:
         time.sleep(10)

@@ -13,6 +13,7 @@ from app.config import validate_environment
 from app.services.retention_service import start_log_retention_worker
 from app.services.ml_service import ml_service
 from app.services.ml_auto_retrain_worker import start_auto_retrain_worker
+from app.services.log_ingestor import start_log_ingestion
 from datetime import datetime
 import sys
 
@@ -58,6 +59,13 @@ async def startup_event():
     # Start log retention worker
     start_log_retention_worker()
     print("✓ Log retention worker started")
+    
+    # Start log ingestion service (auto-starts with server)
+    import threading
+    ingestion_thread = threading.Thread(target=start_log_ingestion, daemon=True, name="log-ingestion-service")
+    ingestion_thread.start()
+    print("✓ Log ingestion service started")
+    
     # Initialize ML (best-effort)
     if ml_service.initialize():
         print("✓ ML service initialized")
