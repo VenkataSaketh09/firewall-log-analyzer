@@ -10,7 +10,7 @@ import {
 import { formatDateForAPI } from '../utils/dateUtils';
 import ReportConfigPanel from '../components/reports/ReportConfigPanel';
 import ReportPreview from '../components/reports/ReportPreview';
-import ReportHistory from '../components/reports/ReportHistoryList';
+import ReportHistory from '../components/reports/ReportHistory';
 
 const Reports = () => {
   const [reportType, setReportType] = useState('daily');
