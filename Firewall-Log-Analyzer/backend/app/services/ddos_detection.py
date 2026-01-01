@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional, List, Dict
 from collections import defaultdict
 from pymongo import DESCENDING
@@ -37,7 +37,7 @@ def detect_ddos(
     """
     # Set default time range to last hour if not specified
     if end_date is None:
-        end_date = datetime.utcnow()
+        end_date = datetime.now(timezone.utc)
     if start_date is None:
         start_date = end_date - timedelta(hours=1)
     
@@ -63,6 +63,8 @@ def detect_ddos(
             "destination_port": 1,
             "protocol": 1,
             "event_type": 1,
+            "log_source": 1,
+            "raw_log": 1,
             "_id": 1
         }
     ).sort("timestamp", DESCENDING))

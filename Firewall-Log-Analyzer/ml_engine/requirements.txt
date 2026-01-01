@@ -1,0 +1,10 @@
+# ML Engine Dependencies
+# These are also added to backend/requirements.txt for integration
+# Keeping separate file for ML engine standalone usage
+
+scikit-learn==1.5.2
+pandas==2.2.2
+numpy==1.26.4
+joblib==1.4.2
+imbalanced-learn==0.12.3
+

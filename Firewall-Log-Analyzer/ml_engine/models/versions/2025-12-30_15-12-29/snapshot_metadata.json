@@ -1,0 +1,26 @@
+{
+  "active_before": null,
+  "copied": [
+    "anomaly_detector.pkl",
+    "threat_classifier.pkl",
+    "feature_scaler.pkl",
+    "label_encoder.pkl",
+    "anomaly_metrics.json",
+    "classifier_metrics.json",
+    "model_metadata.json"
+  ],
+  "extra": {},
+  "missing": [],
+  "reason": "manual_test_snapshot",
+  "run_id": "manual",
+  "sha256": {
+    "anomaly_detector.pkl": "f0738054aad4ec15d1da0bc7d53f683d97b51f81468ca1c364a67e4de7520922",
+    "anomaly_metrics.json": "c330c10e5c5d8f5c3f828842aadb26151177af76d5f8bb89bff03957c48dfdbd",
+    "classifier_metrics.json": "10f49222760cd1bf6ab3503379d4756eb46448a1c96358a630af23a668524a6f",
+    "feature_scaler.pkl": "2e0854910394e753151f53e304b712a73c3cc89521420a71832863a4578c32f6",
+    "label_encoder.pkl": "14925e14a1c8db6c7350997cb1c60d7166b58bfc476180e75043385c9e5621ce",
+    "model_metadata.json": "d52c35a902a6a6d7c533121402fea3175277af4a6c5976427ae7c0dfa04a15c6",
+    "threat_classifier.pkl": "f939b13f53a45e03be8ecec01b63e2081906b8116a1527bf2513ee87e558e797"
+  },
+  "snapshot_at_utc": "2025-12-30T15:12:29.813863+00:00"
+}

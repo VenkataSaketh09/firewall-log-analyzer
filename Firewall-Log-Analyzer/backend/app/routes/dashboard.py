@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, HTTPException
 from pymongo import DESCENDING
 from app.schemas.dashboard_schema import (
@@ -10,7 +10,7 @@ from app.schemas.dashboard_schema import (
 )
 from app.services.log_queries import get_top_ips
 from app.db.mongo import logs_collection, client
-from app.services.alert_service import get_or_compute_alerts, sort_alert_docs
+from app.services.alert_service import get_or_compute_alerts, sort_alert_docs, compute_alert_docs
 
 router = APIRouter(prefix="/api/dashboard", tags=["dashboard"])
 
@@ -51,6 +51,24 @@ def get_dashboard_summary():
         
         # 2. Threat summary from cached alerts (counts of detections)
         all_threats = alert_docs or []
+        
+        # If no threats found in 24h, try to detect from all-time logs
+        if not all_threats:
+            # Try all-time detection as fallback
+            all_time_start = datetime.now(timezone.utc) - timedelta(days=30)  # Last 30 days
+            all_time_end = datetime.now(timezone.utc)
+            try:
+                all_time_alerts = compute_alert_docs(
+                    start_date=all_time_start,
+                    end_date=all_time_end,
+                    bucket_end=all_time_end,
+                    lookback_seconds=int((all_time_end - all_time_start).total_seconds()),
+                    max_per_type=50
+                )
+                all_threats = all_time_alerts
+            except Exception:
+                pass  # Keep empty if detection fails
+        
         threat_summary = ThreatSummary(
             total_brute_force=sum(1 for d in all_threats if d.get("alert_type") == "BRUTE_FORCE"),
             total_ddos=sum(1 for d in all_threats if d.get("alert_type") == "DDOS"),
@@ -107,8 +125,11 @@ def get_dashboard_summary():
         total_logs_24h = logs_collection.count_documents(query_24h)
         high_severity_logs_24h = logs_collection.count_documents({
             **query_24h,
-            "severity": "HIGH"
+            "severity": {"$in": ["HIGH", "CRITICAL"]}
         })
+        
+        # Get all-time stats separately
+        total_logs_all_time = logs_collection.count_documents({})
         
         # Get last log timestamp
         last_log = logs_collection.find_one(
@@ -121,6 +142,7 @@ def get_dashboard_summary():
         system_health = SystemHealth(
             database_status=db_status,
             total_logs_24h=total_logs_24h,
+            total_logs_all_time=total_logs_all_time,
             high_severity_logs_24h=high_severity_logs_24h,
             last_log_timestamp=last_log_timestamp,
             uptime_seconds=None  # Could be calculated if we track startup time
@@ -131,7 +153,7 @@ def get_dashboard_summary():
             threats=threat_summary,
             top_ips=top_ips,
             system_health=system_health,
-            generated_at=datetime.utcnow()
+            generated_at=datetime.now(timezone.utc)
         )
         
     except Exception as e:

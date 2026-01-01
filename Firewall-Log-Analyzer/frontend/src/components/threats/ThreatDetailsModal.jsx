@@ -14,7 +14,8 @@ const ThreatDetailsModal = ({ threat, isOpen, onClose, ipTimelineData = [] }) =>
     if (isOpen && threat?.source_ip) {
       fetchIPReputation(threat.source_ip, { use_cache: true });
     }
-  }, [isOpen, threat]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, threat?.source_ip]);
 
   const isPrivateIp = (ip) => {
     if (!ip) return false;
@@ -152,6 +153,60 @@ const ThreatDetailsModal = ({ threat, isOpen, onClose, ipTimelineData = [] }) =>
                 Description
               </h3>
               <p className="text-sm text-gray-700 whitespace-pre-wrap">{threat.description}</p>
+            </div>
+          )}
+
+          {/* ML Insights */}
+          {(threat.ml_risk_score != null ||
+            threat.ml_anomaly_score != null ||
+            threat.ml_confidence != null ||
+            threat.ml_predicted_label != null) && (
+            <div className="mb-6">
+              <h3 className="text-lg font-semibold text-gray-800 border-b pb-2 mb-3">
+                ML Insights
+              </h3>
+              <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600">Risk Score</label>
+                    <p className="mt-1 text-lg font-semibold">
+                      {threat.ml_risk_score != null ? `${Math.round(threat.ml_risk_score)} / 100` : 'N/A'}
+                    </p>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600">Anomaly Score</label>
+                    <p className="mt-1 text-sm">
+                      {threat.ml_anomaly_score != null ? threat.ml_anomaly_score.toFixed(3) : 'N/A'}
+                    </p>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600">Predicted Label</label>
+                    <p className="mt-1 text-sm">{threat.ml_predicted_label || 'N/A'}</p>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600">Confidence</label>
+                    <p className="mt-1 text-sm">
+                      {threat.ml_confidence != null ? threat.ml_confidence.toFixed(3) : 'N/A'}
+                    </p>
+                  </div>
+                </div>
+
+                {Array.isArray(threat.ml_reasoning) && threat.ml_reasoning.length > 0 && (
+                  <div className="mt-4">
+                    <label className="block text-xs font-medium text-gray-600 mb-2">Reasoning</label>
+                    <ul className="list-disc pl-5 text-xs text-gray-700 space-y-1">
+                      {threat.ml_reasoning.slice(0, 8).map((r, idx) => (
+                        <li key={idx}>{r}</li>
+                      ))}
+                    </ul>
+                    {threat.ml_reasoning.length > 8 && (
+                      <div className="mt-2 text-xs text-gray-500">
+                        Showing first 8 reasoning items…
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
           )}
 

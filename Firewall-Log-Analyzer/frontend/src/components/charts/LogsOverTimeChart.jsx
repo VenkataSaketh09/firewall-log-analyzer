@@ -20,12 +20,14 @@ const LogsOverTimeChart = ({ data }) => {
   }
 
   // Transform data for chart
-  const chartData = data.map((item) => ({
+  const chartData = data
+    .filter((item) => item && item.hour) // Filter out invalid items
+    .map((item) => ({
     time: new Date(item.hour).toLocaleTimeString('en-US', { 
       hour: '2-digit', 
       minute: '2-digit' 
     }),
-    count: item.count,
+      count: item.count || 0,
   }));
 
   return (

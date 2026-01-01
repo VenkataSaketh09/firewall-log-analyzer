@@ -16,3 +16,9 @@ starlette==0.50.0
 typing-inspection==0.4.2
 typing_extensions==4.15.0
 uvicorn==0.40.0
+# ML Engine Dependencies
+scikit-learn==1.5.2
+pandas==2.2.2
+numpy==1.26.4
+joblib==1.4.2
+imbalanced-learn==0.12.3

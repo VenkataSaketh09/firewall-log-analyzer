@@ -52,6 +52,25 @@ const ThreatCard = ({ threat, onViewDetails }) => {
             <span className="font-medium">Attempts:</span> {threat.attempt_count}
           </div>
         )}
+
+        {threat.ml_risk_score != null && (
+          <div className="text-sm text-gray-700">
+            <div className="flex items-center justify-between">
+              <span className="font-medium">ML Risk:</span>
+              <span className="font-mono">{Math.round(threat.ml_risk_score)} / 100</span>
+            </div>
+            <div className="mt-1 h-2 w-full bg-gray-200 rounded">
+              <div
+                className="h-2 rounded"
+                style={{
+                  width: `${Math.max(0, Math.min(100, threat.ml_risk_score))}%`,
+                  backgroundColor:
+                    threat.ml_risk_score >= 80 ? '#dc2626' : threat.ml_risk_score >= 60 ? '#ea580c' : '#eab308',
+                }}
+              />
+            </div>
+          </div>
+        )}
       </div>
 
       <button

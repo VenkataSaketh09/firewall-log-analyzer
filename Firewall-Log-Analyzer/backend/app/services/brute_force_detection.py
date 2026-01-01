@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional, List, Dict
 from pymongo import DESCENDING
 from app.db.mongo import logs_collection
@@ -26,7 +26,7 @@ def detect_brute_force(
     """
     # Set default time range to last 24 hours if not specified
     if end_date is None:
-        end_date = datetime.utcnow()
+        end_date = datetime.now(timezone.utc)
     if start_date is None:
         start_date = end_date - timedelta(hours=24)
     
@@ -45,7 +45,7 @@ def detect_brute_force(
     # Get all failed login attempts in the time range
     failed_logins = logs_collection.find(
         base_query,
-        {"source_ip": 1, "timestamp": 1, "username": 1, "_id": 1}
+        {"source_ip": 1, "timestamp": 1, "username": 1, "raw_log": 1, "log_source": 1, "event_type": 1, "_id": 1}
     ).sort("timestamp", DESCENDING)
     
     # Group attempts by IP and check for brute force patterns
@@ -61,7 +61,10 @@ def detect_brute_force(
         ip_attempts[ip].append({
             "timestamp": attempt["timestamp"],
             "username": attempt.get("username"),
-            "log_id": str(attempt["_id"])
+            "log_id": str(attempt["_id"]),
+            "raw_log": attempt.get("raw_log", ""),
+            "log_source": attempt.get("log_source", "auth.log"),
+            "event_type": attempt.get("event_type", "SSH_FAILED_LOGIN"),
         })
     
     # Analyze each IP for brute force patterns
@@ -116,7 +119,11 @@ def detect_brute_force(
                 "first_attempt": first_attempt,
                 "last_attempt": last_attempt,
                 "attack_windows": attack_windows,
-                "severity": _calculate_severity(total_attempts, len(attack_windows))
+                "severity": _calculate_severity(total_attempts, len(attack_windows)),
+                # Representative log line for ML scoring / debugging
+                "sample_raw_log": attempts[-1].get("raw_log", "") if attempts else "",
+                "sample_log_source": attempts[-1].get("log_source", "auth.log") if attempts else "auth.log",
+                "sample_event_type": attempts[-1].get("event_type", "SSH_FAILED_LOGIN") if attempts else "SSH_FAILED_LOGIN",
             })
     
     # Sort by total attempts (most severe first)
@@ -150,7 +157,7 @@ def get_brute_force_timeline(ip: str, start_date: Optional[datetime] = None, end
         Dictionary with timeline information
     """
     if end_date is None:
-        end_date = datetime.utcnow()
+        end_date = datetime.now(timezone.utc)
     if start_date is None:
         start_date = end_date - timedelta(hours=24)
     

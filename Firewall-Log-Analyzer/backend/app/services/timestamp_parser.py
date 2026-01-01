@@ -2,7 +2,7 @@
 Timestamp parsing utilities for various log formats
 """
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 
@@ -31,7 +31,7 @@ def parse_syslog_timestamp(log_line: str) -> Optional[datetime]:
             'Jul': 7, 'Aug': 8, 'Sep': 9, 'Oct': 10, 'Nov': 11, 'Dec': 12
         }
         month = month_map.get(month_str, 1)
-        year = datetime.utcnow().year  # Assume current year if not specified
+        year = datetime.now(timezone.utc).year  # Assume current year if not specified
         try:
             return datetime(year, month, int(day), int(hour), int(minute), int(second))
         except ValueError:
@@ -83,7 +83,7 @@ def extract_timestamp(log_line: str, log_source: str = "unknown") -> datetime:
     
     # Fallback to current time if parsing failed
     if timestamp is None:
-        timestamp = datetime.utcnow()
+        timestamp = datetime.now(timezone.utc)
     
     return timestamp
 

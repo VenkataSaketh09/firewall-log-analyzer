@@ -37,7 +37,7 @@ const Logs = () => {
     search: '',
   });
 
-  const fetchLogs = async () => {
+  const fetchLogs = React.useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
@@ -66,38 +66,29 @@ const Logs = () => {
 
       const data = await getLogs(params);
       // Normalize backend id field: FastAPI/Pydantic may return either "id" or "_id"
-      const normalizedLogs = (data.logs || []).map((log) => ({
+      const normalizedLogs = (data?.logs || []).map((log) => ({
         ...log,
         id: log.id ?? log._id,
       }));
       setLogs(normalizedLogs);
       setPagination({
-        page: data.page || 1,
-        page_size: data.page_size || 50,
-        total: data.total || 0,
-        total_pages: data.total_pages || 0,
+        page: data?.page || 1,
+        page_size: data?.page_size || 50,
+        total: data?.total || 0,
+        total_pages: data?.total_pages || 0,
       });
     } catch (err) {
       console.error('Error fetching logs:', err);
-      setError(err.message || 'Failed to load logs');
+      const errorMessage = err?.response?.data?.detail || err?.userMessage || err?.message || 'Failed to load logs';
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }
-  };
+  }, [pagination.page, pagination.page_size, sortBy, sortOrder, filters]);
 
   useEffect(() => {
     fetchLogs();
-  }, [pagination.page, pagination.page_size, sortBy, sortOrder]);
-
-  // Debounce filter changes
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setPagination((prev) => ({ ...prev, page: 1 }));
-      fetchLogs();
-    }, 500);
-
-    return () => clearTimeout(timer);
-  }, [filters]);
+  }, [fetchLogs]);
 
   // Close export menu when clicking outside
   useEffect(() => {
@@ -215,7 +206,8 @@ const Logs = () => {
       downloadBlob(blob, filename);
     } catch (err) {
       console.error('Error exporting logs:', err);
-      alert('Failed to export logs. Please try again.');
+      const errorMessage = err?.response?.data?.detail || err?.userMessage || err?.message || 'Failed to export logs';
+      alert(`Failed to export logs: ${errorMessage}`);
     }
   };
 
@@ -284,7 +276,8 @@ const Logs = () => {
       downloadBlob(blob, `selected_logs_${selectedIds.length}_${dateStr}.pdf`);
     } catch (err) {
       console.error('Error exporting selected logs to PDF:', err);
-      alert('Failed to export selected logs to PDF. Please try again.');
+      const errorMessage = err?.response?.data?.detail || err?.userMessage || err?.message || 'Failed to export selected logs to PDF';
+      alert(`Failed to export selected logs to PDF: ${errorMessage}`);
     }
   };
   return (
