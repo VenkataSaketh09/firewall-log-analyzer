@@ -236,10 +236,12 @@ def _detect_distributed_floods(
         
         unique_ips = len(ip_logs)
         
+        # Initialize attack_windows before the conditional block
+        attack_windows = []
+        
         # Check if this qualifies as distributed attack
         if unique_ips >= min_ip_count:
             # Sliding window analysis
-            attack_windows = []
             i = 0
             
             while i < len(target_logs):

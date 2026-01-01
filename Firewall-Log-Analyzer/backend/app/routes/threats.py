@@ -141,7 +141,7 @@ def get_brute_force_detections(
                     attempt_count=win["attempt_count"],
                     attempts=win["attempts"]
                 )
-                for win in detection["attack_windows"]
+                for win in detection.get("attack_windows", [])
             ]
             
             # Get reputation for this IP
@@ -309,7 +309,7 @@ def detect_brute_force_post(
                     attempt_count=win["attempt_count"],
                     attempts=win["attempts"]
                 )
-                for win in detection["attack_windows"]
+                for win in detection.get("attack_windows", [])
             ]
             
             # Get reputation for this IP
@@ -486,7 +486,7 @@ def get_ddos_detections(
                     unique_ip_count=win.get("unique_ip_count"),
                     top_attacking_ips=win.get("top_attacking_ips")
                 )
-                for win in detection["attack_windows"]
+                for win in detection.get("attack_windows", [])
             ]
             
             model = DDoSDetection(
