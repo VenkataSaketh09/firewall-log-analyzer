@@ -167,21 +167,11 @@ const ThreatDetailsModal = ({ threat, isOpen, onClose, ipTimelineData = [] }) =>
               </h3>
               <div className="bg-gradient-to-br from-blue-50 to-indigo-50 p-5 rounded-lg border-2 border-blue-200 shadow-sm">
                 {/* Status Header */}
-                <div className="mb-4 flex items-center justify-between">
+                <div className="mb-4 flex items-center">
                   <div className="flex items-center gap-2">
                     <FiCpu className="w-4 h-4 text-blue-600" />
                     <span className="text-sm font-semibold text-gray-700">Machine Learning Analysis</span>
                   </div>
-                  {threat.ml_risk_score != null && (
-                    <span className={`px-3 py-1 rounded-full text-xs font-bold ${
-                      threat.ml_risk_score >= 80 ? 'bg-red-100 text-red-800' :
-                      threat.ml_risk_score >= 60 ? 'bg-orange-100 text-orange-800' :
-                      threat.ml_risk_score >= 40 ? 'bg-yellow-100 text-yellow-800' :
-                      'bg-green-100 text-green-800'
-                    }`}>
-                      Risk: {Math.round(threat.ml_risk_score)}/100
-                    </span>
-                  )}
                 </div>
 
                 {/* Metrics Grid */}
@@ -284,15 +274,82 @@ const ThreatDetailsModal = ({ threat, isOpen, onClose, ipTimelineData = [] }) =>
                 {Array.isArray(threat.ml_reasoning) && threat.ml_reasoning.length > 0 && (
                   <div className="mt-4 bg-white p-4 rounded-lg border border-blue-100 shadow-sm">
                     <label className="block text-sm font-semibold text-gray-700 mb-3">Analysis Reasoning</label>
-                    <div className="space-y-2">
-                      {threat.ml_reasoning.slice(0, 10).map((r, idx) => (
-                        <div key={idx} className="flex items-start gap-2 text-xs text-gray-700">
-                          <span className="text-blue-500 mt-1">•</span>
-                          <span className="flex-1 font-mono">{r}</span>
-                        </div>
-                      ))}
+                    <div className="space-y-3">
+                      {threat.ml_reasoning.slice(0, 10).map((r, idx) => {
+                        // Parse reasoning string to extract key-value pairs
+                        const parseReasoning = (reasoningStr) => {
+                          if (reasoningStr.includes('=')) {
+                            const parts = reasoningStr.split('=');
+                            const key = parts[0].trim();
+                            const value = parts.slice(1).join('=').trim();
+                            return { key, value };
+                          }
+                          return { key: null, value: reasoningStr };
+                        };
+
+                        const { key, value } = parseReasoning(r);
+                        const isScore = key?.includes('score') || key?.includes('Score');
+                        const isLabel = key?.includes('label') || key?.includes('Label');
+                        const isConf = key?.includes('conf') || key?.includes('Conf');
+                        const isInferred = key?.includes('inferred') || key?.includes('Inferred');
+                        const isRule = key?.includes('rule') || key?.includes('Rule');
+
+                        // Determine color scheme based on content
+                        let bgColor = 'bg-gray-50';
+                        let borderColor = 'border-gray-200';
+                        let textColor = 'text-gray-700';
+                        let labelColor = 'text-gray-600';
+
+                        if (isScore) {
+                          const numValue = parseFloat(value);
+                          if (!isNaN(numValue)) {
+                            if (key.includes('anomaly')) {
+                              bgColor = numValue >= 0.7 ? 'bg-red-50' : numValue >= 0.5 ? 'bg-orange-50' : 'bg-green-50';
+                              borderColor = numValue >= 0.7 ? 'border-red-200' : numValue >= 0.5 ? 'border-orange-200' : 'border-green-200';
+                              labelColor = numValue >= 0.7 ? 'text-red-700' : numValue >= 0.5 ? 'text-orange-700' : 'text-green-700';
+                            } else if (key.includes('risk')) {
+                              bgColor = numValue >= 80 ? 'bg-red-50' : numValue >= 60 ? 'bg-orange-50' : numValue >= 40 ? 'bg-yellow-50' : 'bg-green-50';
+                              borderColor = numValue >= 80 ? 'border-red-200' : numValue >= 60 ? 'border-orange-200' : numValue >= 40 ? 'border-yellow-200' : 'border-green-200';
+                              labelColor = numValue >= 80 ? 'text-red-700' : numValue >= 60 ? 'text-orange-700' : numValue >= 40 ? 'text-yellow-700' : 'text-green-700';
+                            }
+                          }
+                        } else if (isLabel) {
+                          if (value.toUpperCase().includes('NORMAL')) {
+                            bgColor = 'bg-green-50';
+                            borderColor = 'border-green-200';
+                            labelColor = 'text-green-700';
+                          } else if (value.toUpperCase().includes('BRUTE_FORCE') || value.toUpperCase().includes('DDOS') || value.toUpperCase().includes('PORT_SCAN')) {
+                            bgColor = 'bg-red-50';
+                            borderColor = 'border-red-200';
+                            labelColor = 'text-red-700';
+                          }
+                        } else if (isInferred) {
+                          bgColor = 'bg-blue-50';
+                          borderColor = 'border-blue-200';
+                          labelColor = 'text-blue-700';
+                        } else if (isRule) {
+                          bgColor = 'bg-purple-50';
+                          borderColor = 'border-purple-200';
+                          labelColor = 'text-purple-700';
+                        }
+
+                        return (
+                          <div key={idx} className={`${bgColor} ${borderColor} border rounded-lg p-3`}>
+                            {key ? (
+                              <div className="flex flex-col gap-1">
+                                <span className={`text-xs font-semibold uppercase tracking-wide ${labelColor}`}>
+                                  {key.replace(/\./g, ' ').replace(/_/g, ' ')}
+                                </span>
+                                <span className="text-sm font-medium text-gray-900">{value}</span>
+                              </div>
+                            ) : (
+                              <span className="text-sm text-gray-700">{value}</span>
+                            )}
+                          </div>
+                        );
+                      })}
                       {threat.ml_reasoning.length > 10 && (
-                        <div className="text-xs text-gray-500 italic pt-2 border-t border-gray-200">
+                        <div className="text-xs text-gray-500 italic pt-2 border-t border-gray-200 text-center">
                           Showing first 10 of {threat.ml_reasoning.length} reasoning items
                         </div>
                       )}
