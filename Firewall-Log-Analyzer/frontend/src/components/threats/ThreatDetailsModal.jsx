@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { FiX, FiRefreshCw } from 'react-icons/fi';
+import { FiX, FiRefreshCw, FiCpu } from 'react-icons/fi';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { SEVERITY_COLORS, SEVERITY_BG_COLORS } from '../../utils/constants';
 import { formatTimestamp } from '../../utils/dateUtils';
@@ -165,45 +165,138 @@ const ThreatDetailsModal = ({ threat, isOpen, onClose, ipTimelineData = [] }) =>
               <h3 className="text-lg font-semibold text-gray-800 border-b pb-2 mb-3">
                 ML Insights
               </h3>
-              <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600">Risk Score</label>
-                    <p className="mt-1 text-lg font-semibold">
-                      {threat.ml_risk_score != null ? `${Math.round(threat.ml_risk_score)} / 100` : 'N/A'}
-                    </p>
+              <div className="bg-gradient-to-br from-blue-50 to-indigo-50 p-5 rounded-lg border-2 border-blue-200 shadow-sm">
+                {/* Status Header */}
+                <div className="mb-4 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <FiCpu className="w-4 h-4 text-blue-600" />
+                    <span className="text-sm font-semibold text-gray-700">Machine Learning Analysis</span>
                   </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600">Anomaly Score</label>
-                    <p className="mt-1 text-sm">
-                      {threat.ml_anomaly_score != null ? threat.ml_anomaly_score.toFixed(3) : 'N/A'}
-                    </p>
+                  {threat.ml_risk_score != null && (
+                    <span className={`px-3 py-1 rounded-full text-xs font-bold ${
+                      threat.ml_risk_score >= 80 ? 'bg-red-100 text-red-800' :
+                      threat.ml_risk_score >= 60 ? 'bg-orange-100 text-orange-800' :
+                      threat.ml_risk_score >= 40 ? 'bg-yellow-100 text-yellow-800' :
+                      'bg-green-100 text-green-800'
+                    }`}>
+                      Risk: {Math.round(threat.ml_risk_score)}/100
+                    </span>
+                  )}
+                </div>
+
+                {/* Metrics Grid */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                  {/* Risk Score with Progress Bar */}
+                  <div className="bg-white p-4 rounded-lg border border-blue-100 shadow-sm">
+                    <label className="block text-xs font-semibold text-gray-700 mb-2">Risk Score</label>
+                    <div className="flex items-center gap-3">
+                      <div className="flex-1">
+                        <div className="flex items-baseline gap-2 mb-2">
+                          <span className="text-2xl font-bold text-gray-900">
+                            {threat.ml_risk_score != null ? Math.round(threat.ml_risk_score) : 'N/A'}
+                          </span>
+                          <span className="text-sm text-gray-500">/ 100</span>
+                        </div>
+                        {threat.ml_risk_score != null && (
+                          <div className="h-3 w-full bg-gray-200 rounded-full overflow-hidden">
+                            <div
+                              className="h-full rounded-full transition-all duration-500"
+                              style={{
+                                width: `${Math.min(100, Math.max(0, threat.ml_risk_score))}%`,
+                                backgroundColor:
+                                  threat.ml_risk_score >= 80 ? '#dc2626' :
+                                  threat.ml_risk_score >= 60 ? '#ea580c' :
+                                  threat.ml_risk_score >= 40 ? '#eab308' :
+                                  '#22c55e',
+                              }}
+                            />
+                          </div>
+                        )}
+                      </div>
+                    </div>
                   </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600">Predicted Label</label>
-                    <p className="mt-1 text-sm">{threat.ml_predicted_label || 'N/A'}</p>
+
+                  {/* Anomaly Score */}
+                  <div className="bg-white p-4 rounded-lg border border-blue-100 shadow-sm">
+                    <label className="block text-xs font-semibold text-gray-700 mb-2">Anomaly Score</label>
+                    <div className="flex items-center gap-3">
+                      <div className="flex-1">
+                        <span className="text-2xl font-bold text-gray-900">
+                          {threat.ml_anomaly_score != null ? threat.ml_anomaly_score.toFixed(3) : 'N/A'}
+                        </span>
+                        {threat.ml_anomaly_score != null && (
+                          <div className="mt-2 h-2 w-full bg-gray-200 rounded-full overflow-hidden">
+                            <div
+                              className="h-full rounded-full transition-all duration-500"
+                              style={{
+                                width: `${Math.min(100, threat.ml_anomaly_score * 100)}%`,
+                                backgroundColor: threat.ml_anomaly_score >= 0.7 ? '#dc2626' : threat.ml_anomaly_score >= 0.5 ? '#ea580c' : '#22c55e',
+                              }}
+                            />
+                          </div>
+                        )}
+                      </div>
+                    </div>
                   </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600">Confidence</label>
-                    <p className="mt-1 text-sm">
-                      {threat.ml_confidence != null ? threat.ml_confidence.toFixed(3) : 'N/A'}
-                    </p>
+
+                  {/* Predicted Label */}
+                  <div className="bg-white p-4 rounded-lg border border-blue-100 shadow-sm">
+                    <label className="block text-xs font-semibold text-gray-700 mb-2">Predicted Label</label>
+                    <div>
+                      <span className={`inline-block px-3 py-1 rounded-full text-sm font-semibold ${
+                        (threat.ml_predicted_label || '').toUpperCase().includes('BRUTE_FORCE') ? 'bg-red-100 text-red-800' :
+                        (threat.ml_predicted_label || '').toUpperCase().includes('DDOS') ? 'bg-orange-100 text-orange-800' :
+                        (threat.ml_predicted_label || '').toUpperCase().includes('PORT_SCAN') ? 'bg-yellow-100 text-yellow-800' :
+                        (threat.ml_predicted_label || '').toUpperCase().includes('NORMAL') ? 'bg-green-100 text-green-800' :
+                        'bg-gray-100 text-gray-800'
+                      }`}>
+                        {threat.ml_predicted_label || 'N/A'}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Confidence */}
+                  <div className="bg-white p-4 rounded-lg border border-blue-100 shadow-sm">
+                    <label className="block text-xs font-semibold text-gray-700 mb-2">Confidence</label>
+                    <div className="flex items-center gap-3">
+                      <div className="flex-1">
+                        <span className="text-2xl font-bold text-gray-900">
+                          {threat.ml_confidence != null ? (threat.ml_confidence * 100).toFixed(1) : 'N/A'}
+                          {threat.ml_confidence != null && <span className="text-sm text-gray-500 ml-1">%</span>}
+                        </span>
+                        {threat.ml_confidence != null && (
+                          <div className="mt-2 h-2 w-full bg-gray-200 rounded-full overflow-hidden">
+                            <div
+                              className="h-full rounded-full transition-all duration-500"
+                              style={{
+                                width: `${threat.ml_confidence * 100}%`,
+                                backgroundColor: threat.ml_confidence >= 0.8 ? '#22c55e' : threat.ml_confidence >= 0.6 ? '#eab308' : '#ea580c',
+                              }}
+                            />
+                          </div>
+                        )}
+                      </div>
+                    </div>
                   </div>
                 </div>
 
+                {/* Reasoning */}
                 {Array.isArray(threat.ml_reasoning) && threat.ml_reasoning.length > 0 && (
-                  <div className="mt-4">
-                    <label className="block text-xs font-medium text-gray-600 mb-2">Reasoning</label>
-                    <ul className="list-disc pl-5 text-xs text-gray-700 space-y-1">
-                      {threat.ml_reasoning.slice(0, 8).map((r, idx) => (
-                        <li key={idx}>{r}</li>
+                  <div className="mt-4 bg-white p-4 rounded-lg border border-blue-100 shadow-sm">
+                    <label className="block text-sm font-semibold text-gray-700 mb-3">Analysis Reasoning</label>
+                    <div className="space-y-2">
+                      {threat.ml_reasoning.slice(0, 10).map((r, idx) => (
+                        <div key={idx} className="flex items-start gap-2 text-xs text-gray-700">
+                          <span className="text-blue-500 mt-1">•</span>
+                          <span className="flex-1 font-mono">{r}</span>
+                        </div>
                       ))}
-                    </ul>
-                    {threat.ml_reasoning.length > 8 && (
-                      <div className="mt-2 text-xs text-gray-500">
-                        Showing first 8 reasoning items…
-                      </div>
-                    )}
+                      {threat.ml_reasoning.length > 10 && (
+                        <div className="text-xs text-gray-500 italic pt-2 border-t border-gray-200">
+                          Showing first 10 of {threat.ml_reasoning.length} reasoning items
+                        </div>
+                      )}
+                    </div>
                   </div>
                 )}
               </div>
