@@ -1,32 +1,23 @@
 import React, { useState, useEffect } from 'react';
 import { FiDownload, FiRefreshCw, FiFileText, FiFile, FiGrid, FiList } from 'react-icons/fi';
 import {
-  getBruteForceThreats,
-  getDDoSThreats,
-  getPortScanThreats,
-  exportThreatsCSV,
-  exportThreatsJSON,
-  getBruteForceTimeline,
-} from '../services/threatsService';
-import { formatDateForAPI } from '../utils/dateUtils';
+  useThreats,
+  useBruteForceTimeline,
+  useExportThreatsCSV,
+  useExportThreatsJSON,
+} from '../hooks/useThreatsQueries';
+import { useMLStatus } from '../hooks/useDashboardQueries';
 import ThreatFilterPanel from '../components/threats/ThreatFilterPanel';
 import ThreatCard from '../components/threats/ThreatCard';
 import ThreatsTable from '../components/threats/ThreatsTable';
 import ThreatDetailsModal from '../components/threats/ThreatDetailsModal';
 import dayjs from 'dayjs';
-import { getMLStatus } from '../services/mlService';
 
 const Threats = () => {
   const [activeTab, setActiveTab] = useState('brute-force');
-  const [threats, setThreats] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
   const [selectedThreat, setSelectedThreat] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [viewMode, setViewMode] = useState('card'); // 'card' or 'table'
-  const [ipTimelineData, setIpTimelineData] = useState([]);
-  const [timelineLoading, setTimelineLoading] = useState(false);
-  const [mlStatus, setMlStatus] = useState(null);
   const [filters, setFilters] = useState({
     start_date: null,
     end_date: null,
@@ -35,17 +26,26 @@ const Threats = () => {
   });
 
   const threatTabs = [
-    { id: 'brute-force', label: 'Brute Force', endpoint: getBruteForceThreats },
-    { id: 'ddos', label: 'DDoS', endpoint: getDDoSThreats },
-    { id: 'port-scan', label: 'Port Scan', endpoint: getPortScanThreats },
+    { id: 'brute-force', label: 'Brute Force' },
+    { id: 'ddos', label: 'DDoS' },
+    { id: 'port-scan', label: 'Port Scan' },
   ];
 
+  // React Query hooks
+  const threatsQuery = useThreats(activeTab, filters);
+  const mlStatusQuery = useMLStatus();
+  const exportCSV = useExportThreatsCSV();
+  const exportJSON = useExportThreatsJSON();
+
+  // Extract data
+  const mlStatus = mlStatusQuery?.data?.ml || null;
+  const rawThreatsData = threatsQuery?.data || {};
+
+  // Normalize threats data
   const normalizeThreats = (tabId, raw) => {
     const detections = Array.isArray(raw) ? raw : raw?.detections || [];
     const toIso = (v) => {
       if (!v) return null;
-      // Backend returns ISO strings via Pydantic json_encoders; keep as-is.
-      // If it ever comes as Date, convert it.
       return typeof v === 'string' ? v : new Date(v).toISOString();
     };
 
@@ -124,50 +124,9 @@ const Threats = () => {
     });
   };
 
-  const fetchThreats = React.useCallback(async () => {
-    try {
-      setLoading(true);
-      setError(null);
-
-      const activeTabData = threatTabs.find((tab) => tab.id === activeTab);
-      if (!activeTabData) return;
-
-      const params = {};
-      if (filters.start_date) {
-        params.start_date = formatDateForAPI(new Date(filters.start_date));
-      }
-      if (filters.end_date) {
-        params.end_date = formatDateForAPI(new Date(filters.end_date));
-      }
-      if (filters.source_ip) params.source_ip = filters.source_ip;
-      if (filters.severity) params.severity = filters.severity;
-
-      const data = await activeTabData.endpoint(params);
-      setThreats(normalizeThreats(activeTab, data));
-    } catch (err) {
-      console.error('Error fetching threats:', err);
-      const errorMessage = err?.response?.data?.detail || err?.userMessage || err?.message || 'Failed to load threats';
-      setError(errorMessage);
-    } finally {
-      setLoading(false);
-    }
-  }, [activeTab, filters]);
-
-  useEffect(() => {
-    fetchThreats();
-  }, [fetchThreats]);
-
-  useEffect(() => {
-    // best-effort status fetch (don't block page if ML is down)
-    (async () => {
-      try {
-        const s = await getMLStatus();
-        setMlStatus(s?.ml || null);
-      } catch (e) {
-        setMlStatus({ enabled: false, available: false, last_error: 'ML status unavailable' });
-      }
-    })();
-  }, []);
+  const threats = normalizeThreats(activeTab, rawThreatsData);
+  const loading = threatsQuery.isLoading;
+  const error = threatsQuery.isError ? (threatsQuery.error?.response?.data?.detail || threatsQuery.error?.userMessage || threatsQuery.error?.message || 'Failed to load threats') : null;
 
   const handleFilterChange = (key, value) => {
     setFilters((prev) => ({ ...prev, [key]: value }));
@@ -181,6 +140,15 @@ const Threats = () => {
       severity: '',
     });
   };
+
+  // Timeline query - only fetch when threat is selected and it's brute-force
+  const timelineQuery = useBruteForceTimeline(
+    selectedThreat?.source_ip || null,
+    {
+      start_date: filters.start_date,
+      end_date: filters.end_date,
+    }
+  );
 
   const buildTimelineSeriesHourly = (timeline = []) => {
     // Backend returns a list of attempts. Convert into hourly buckets for charting.
@@ -196,32 +164,14 @@ const Threats = () => {
       .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
   };
 
-  const fetchTimelineForThreat = async (threat) => {
-    setIpTimelineData([]);
-    if (!threat || !threat.source_ip) return;
-    if (activeTab !== 'brute-force') return; // only brute-force timeline exists currently
-
-    try {
-      setTimelineLoading(true);
-      const params = {};
-      if (filters.start_date) params.start_date = formatDateForAPI(new Date(filters.start_date));
-      if (filters.end_date) params.end_date = formatDateForAPI(new Date(filters.end_date));
-
-      const data = await getBruteForceTimeline(threat.source_ip, params);
-      const series = buildTimelineSeriesHourly(data?.timeline || []);
-      setIpTimelineData(series);
-    } catch (err) {
-      console.error('Error fetching threat timeline:', err);
-      setIpTimelineData([]);
-    } finally {
-      setTimelineLoading(false);
-    }
-  };
+  const ipTimelineData = timelineQuery?.data 
+    ? buildTimelineSeriesHourly(timelineQuery.data?.timeline || [])
+    : [];
+  const timelineLoading = timelineQuery.isLoading;
 
   const handleViewDetails = (threat) => {
     setSelectedThreat(threat);
     setIsModalOpen(true);
-    fetchTimelineForThreat(threat);
   };
 
   const handleExport = async (format) => {
@@ -237,10 +187,10 @@ const Threats = () => {
       const threatType = activeTab;
 
       if (format === 'csv') {
-        blob = await exportThreatsCSV(threatType, params);
+        blob = await exportCSV.mutateAsync({ threatType, params });
         filename = `${activeTab}_threats_${new Date().toISOString().split('T')[0]}.csv`;
       } else {
-        blob = await exportThreatsJSON(threatType, params);
+        blob = await exportJSON.mutateAsync({ threatType, params });
         filename = `${activeTab}_threats_${new Date().toISOString().split('T')[0]}.json`;
       }
 
@@ -258,13 +208,6 @@ const Threats = () => {
       alert(`Failed to export threats: ${errorMessage}`);
     }
   };
-
-  // If user switches tabs while modal is open, timeline should reset (timeline endpoint differs per threat type).
-  useEffect(() => {
-    if (!isModalOpen) return;
-    fetchTimelineForThreat(selectedThreat);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab]);
 
   return (
     <div className="min-h-screen bg-gray-50 p-6">
@@ -291,7 +234,7 @@ const Threats = () => {
               </button>
             </div>
             <button
-              onClick={fetchThreats}
+              onClick={() => threatsQuery.refetch()}
               disabled={loading}
               className="px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700 disabled:opacity-50 flex items-center gap-2"
             >
@@ -414,7 +357,6 @@ const Threats = () => {
         onClose={() => {
           setIsModalOpen(false);
           setSelectedThreat(null);
-          setIpTimelineData([]);
         }}
         ipTimelineData={timelineLoading ? [] : ipTimelineData}
       />

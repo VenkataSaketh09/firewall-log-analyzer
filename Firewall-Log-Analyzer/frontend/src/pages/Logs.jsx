@@ -1,6 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { FiDownload, FiRefreshCw, FiFileText, FiFile, FiFileMinus, FiRadio } from 'react-icons/fi';
-import { getLogs, exportLogsCSV, exportLogsJSON, exportLogsPDF, exportSelectedLogsPDF, getCachedLogs } from '../services/logsService';
+import { 
+  useLogs, 
+  useExportLogsCSV, 
+  useExportLogsJSON, 
+  useExportLogsPDF, 
+  useExportSelectedLogsPDF 
+} from '../hooks/useLogsQueries';
 import { formatDateForAPI } from '../utils/dateUtils';
 import LogFilterPanel from '../components/logs/LogFilterPanel';
 import LogsTable from '../components/logs/LogsTable';
@@ -28,9 +34,6 @@ const Logs = () => {
     getCachedLogs
   } = useRawLogWebSocket();
 
-  const [logs, setLogs] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
   const [selectedLog, setSelectedLog] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedLogs, setSelectedLogs] = useState([]);
@@ -41,8 +44,6 @@ const Logs = () => {
   const [pagination, setPagination] = useState({
     page: 1,
     page_size: 50,
-    total: 0,
-    total_pages: 0,
   });
   const [sortBy, setSortBy] = useState('timestamp');
   const [sortOrder, setSortOrder] = useState('desc');
@@ -58,60 +59,43 @@ const Logs = () => {
     search: '',
   });
 
-  const fetchLogs = React.useCallback(async () => {
-    try {
-      setLoading(true);
-      setError(null);
+  // React Query hooks
+  const logsQuery = useLogs({
+    page: pagination.page,
+    page_size: pagination.page_size,
+    sort_by: sortBy,
+    sort_order: sortOrder,
+    start_date: filters.start_date,
+    end_date: filters.end_date,
+    source_ip: filters.source_ip || null,
+    severity: filters.severity || null,
+    event_type: filters.event_type || null,
+    log_source: filters.log_source || null,
+    protocol: filters.protocol || null,
+    port: filters.port || null,
+    search: filters.search || null,
+  });
 
-      const params = {
-        page: pagination.page,
-        page_size: pagination.page_size,
-        sort_by: sortBy,
-        sort_order: sortOrder,
-      };
+  const exportCSV = useExportLogsCSV();
+  const exportJSON = useExportLogsJSON();
+  const exportPDF = useExportLogsPDF();
+  const exportSelectedPDF = useExportSelectedLogsPDF();
 
-      // Add filters
-      if (filters.start_date) {
-        params.start_date = formatDateForAPI(new Date(filters.start_date));
-      }
-      if (filters.end_date) {
-        params.end_date = formatDateForAPI(new Date(filters.end_date));
-      }
-      if (filters.source_ip) params.source_ip = filters.source_ip;
-      if (filters.severity) params.severity = filters.severity;
-      if (filters.event_type) params.event_type = filters.event_type;
-      if (filters.log_source) params.log_source = filters.log_source;
-      if (filters.protocol) params.protocol = filters.protocol;
-      if (filters.port) params.port = filters.port;
-      if (filters.search) params.search = filters.search;
-
-      const data = await getLogs(params);
-      // Normalize backend id field: FastAPI/Pydantic may return either "id" or "_id"
-      const normalizedLogs = (data?.logs || []).map((log) => ({
-        ...log,
-        id: log.id ?? log._id,
-      }));
-      setLogs(normalizedLogs);
-      setPagination({
-        page: data?.page || 1,
-        page_size: data?.page_size || 50,
-        total: data?.total || 0,
-        total_pages: data?.total_pages || 0,
-      });
-    } catch (err) {
-      console.error('Error fetching logs:', err);
-      const errorMessage = err?.response?.data?.detail || err?.userMessage || err?.message || 'Failed to load logs';
-      setError(errorMessage);
-    } finally {
-      setLoading(false);
-    }
-  }, [pagination.page, pagination.page_size, sortBy, sortOrder, filters]);
-
-  useEffect(() => {
-    if (!liveMode) {
-      fetchLogs();
-    }
-  }, [fetchLogs, liveMode]);
+  // Extract data from query
+  const data = logsQuery?.data || {};
+  // Normalize backend id field: FastAPI/Pydantic may return either "id" or "_id"
+  const logs = (data?.logs || []).map((log) => ({
+    ...log,
+    id: log.id ?? log._id,
+  }));
+  const paginationData = {
+    page: data?.page || 1,
+    page_size: data?.page_size || 50,
+    total: data?.total || 0,
+    total_pages: data?.total_pages || 0,
+  };
+  const loading = logsQuery.isLoading;
+  const error = logsQuery.isError ? (logsQuery.error?.response?.data?.detail || logsQuery.error?.userMessage || logsQuery.error?.message || 'Failed to load logs') : null;
 
   // Handle live mode toggle
   useEffect(() => {
@@ -234,6 +218,13 @@ const Logs = () => {
     setPagination((prev) => ({ ...prev, page_size: parseInt(newSize), page: 1 }));
   };
 
+  // Update pagination state when query data changes
+  useEffect(() => {
+    if (paginationData.page !== pagination.page) {
+      setPagination((prev) => ({ ...prev, page: paginationData.page }));
+    }
+  }, [paginationData.page]);
+
   const handleSelectLog = (logId, checked) => {
     if (checked) {
       setSelectedLogs((prev) => [...prev, logId]);
@@ -278,13 +269,13 @@ const Logs = () => {
       let filename;
 
       if (format === 'csv') {
-        blob = await exportLogsCSV(params);
+        blob = await exportCSV.mutateAsync(params);
         filename = `logs_export_${new Date().toISOString().split('T')[0]}.csv`;
       } else if (format === 'json') {
-        blob = await exportLogsJSON(params);
+        blob = await exportJSON.mutateAsync(params);
         filename = `logs_export_${new Date().toISOString().split('T')[0]}.json`;
       } else {
-        blob = await exportLogsPDF(params);
+        blob = await exportPDF.mutateAsync(params);
         filename = `logs_export_${new Date().toISOString().split('T')[0]}.pdf`;
       }
 
@@ -356,7 +347,7 @@ const Logs = () => {
       return;
     }
     try {
-      const blob = await exportSelectedLogsPDF(selectedIds);
+      const blob = await exportSelectedPDF.mutateAsync(selectedIds);
       const dateStr = new Date().toISOString().split('T')[0];
       downloadBlob(blob, `selected_logs_${selectedIds.length}_${dateStr}.pdf`);
     } catch (err) {
@@ -389,7 +380,7 @@ const Logs = () => {
             </button>
             {!liveMode && (
               <button
-                onClick={fetchLogs}
+                onClick={() => logsQuery.refetch()}
                 disabled={loading}
                 className="px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700 disabled:opacity-50 flex items-center gap-2"
               >
@@ -584,12 +575,12 @@ const Logs = () => {
             <div className="mt-6 flex items-center justify-between bg-white rounded-lg shadow p-4">
               <div className="flex items-center gap-4">
                 <span className="text-sm text-gray-700">
-                  Showing {(pagination.page - 1) * pagination.page_size + 1} to{' '}
-                  {Math.min(pagination.page * pagination.page_size, pagination.total)} of{' '}
-                  {pagination.total} logs
+                  Showing {(paginationData.page - 1) * paginationData.page_size + 1} to{' '}
+                  {Math.min(paginationData.page * paginationData.page_size, paginationData.total)} of{' '}
+                  {paginationData.total} logs
                 </span>
                 <select
-                  value={pagination.page_size}
+                  value={paginationData.page_size}
                   onChange={(e) => handlePageSizeChange(e.target.value)}
                   className="px-3 py-1 border border-gray-300 rounded-md text-sm"
                 >
@@ -602,18 +593,18 @@ const Logs = () => {
 
               <div className="flex items-center gap-2">
                 <button
-                  onClick={() => handlePageChange(pagination.page - 1)}
-                  disabled={pagination.page === 1}
+                  onClick={() => handlePageChange(paginationData.page - 1)}
+                  disabled={paginationData.page === 1}
                   className="px-3 py-1 border border-gray-300 rounded-md text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
                 >
                   Previous
                 </button>
                 <span className="text-sm text-gray-700">
-                  Page {pagination.page} of {pagination.total_pages}
+                  Page {paginationData.page} of {paginationData.total_pages}
                 </span>
                 <button
-                  onClick={() => handlePageChange(pagination.page + 1)}
-                  disabled={pagination.page >= pagination.total_pages}
+                  onClick={() => handlePageChange(paginationData.page + 1)}
+                  disabled={paginationData.page >= paginationData.total_pages}
                   className="px-3 py-1 border border-gray-300 rounded-md text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
                 >
                   Next

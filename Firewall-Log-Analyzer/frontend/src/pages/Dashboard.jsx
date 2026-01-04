@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { 
   FiActivity, 
   FiAlertTriangle, 
@@ -8,13 +8,7 @@ import {
   FiCheckCircle,
   FiXCircle
 } from 'react-icons/fi';
-import { 
-  getDashboardSummary, 
-  getLogsStatsSummary, 
-  getRecentLogs 
-} from '../services/dashboardService';
-import { useAutoRefresh } from '../hooks/useAutoRefresh';
-import { REFRESH_INTERVALS } from '../utils/constants';
+import { useDashboardData } from '../hooks/useDashboardQueries';
 import { formatNumber, calculateSecurityScore } from '../utils/formatters';
 import { formatRelativeTime } from '../utils/dateUtils';
 import SummaryCard from '../components/common/SummaryCard';
@@ -25,58 +19,45 @@ import SeverityDistributionChart from '../components/charts/SeverityDistribution
 import EventTypesChart from '../components/charts/EventTypesChart';
 import ProtocolUsageChart from '../components/charts/ProtocolUsageChart';
 import RecentActivityTimeline from '../components/timeline/RecentActivityTimeline';
-import { getMLStatus } from '../services/mlService';
 
 const Dashboard = () => {
-  const [dashboardData, setDashboardData] = useState(null);
-  const [statsData, setStatsData] = useState(null);
-  const [recentLogs, setRecentLogs] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [lastRefresh, setLastRefresh] = useState(new Date());
-  const [isRefreshing, setIsRefreshing] = useState(false);
-  const [mlStatus, setMlStatus] = useState(null);
-
-  const fetchDashboardData = React.useCallback(async () => {
-    try {
-      setIsRefreshing(true);
-      // Get stats without date filter to show all-time data if 24h is empty
-      const [dashboard, stats, logs, ml] = await Promise.all([
-        getDashboardSummary(),
-        getLogsStatsSummary(null, null), // No date filter - shows all data
-        getRecentLogs(50),
-        getMLStatus().catch(() => null),
-      ]);
-      
-      setDashboardData(dashboard);
-      setStatsData(stats);
-      setRecentLogs(logs?.logs || []);
-      setMlStatus(ml?.ml || null);
-      setError(null);
-      setLastRefresh(new Date());
-    } catch (err) {
-      console.error('Error fetching dashboard data:', err);
-      const errorMessage = err?.response?.data?.detail || err?.userMessage || err?.message || 'Failed to load dashboard data';
-      setError(errorMessage);
-    } finally {
-      setLoading(false);
-      setIsRefreshing(false);
-    }
-  }, []);
-
-  // Auto-refresh every 30 seconds
-  useAutoRefresh(fetchDashboardData, REFRESH_INTERVALS.DASHBOARD, []);
-
-  // Initial load
-  useEffect(() => {
-    fetchDashboardData();
-  }, [fetchDashboardData]);
+  const {
+    dashboardSummary,
+    statsSummary,
+    recentLogs,
+    mlStatus,
+    isLoading,
+    isError,
+    error,
+  } = useDashboardData();
 
   const handleManualRefresh = () => {
-    fetchDashboardData();
+    // Refetch all queries
+    dashboardSummary.refetch();
+    statsSummary.refetch();
+    recentLogs.refetch();
+    mlStatus.refetch();
   };
 
-  if (loading && !dashboardData) {
+  // Extract data from queries
+  const dashboard = dashboardSummary?.data || {};
+  const stats = statsSummary?.data || {};
+  const logsData = recentLogs?.data || {};
+  const mlStatusData = mlStatus?.data?.ml || null;
+  
+  const threats = dashboard?.threats || {};
+  const systemHealth = dashboard?.system_health || {};
+  const activeAlerts = dashboard?.active_alerts || [];
+  const topIPs = dashboard?.top_ips || [];
+  const recentLogsList = logsData?.logs || [];
+
+  // Determine loading and error states
+  const loading = isLoading && !dashboardSummary.data;
+  const errorMessage = isError ? (error?.response?.data?.detail || error?.userMessage || error?.message || 'Failed to load dashboard data') : null;
+  const isRefreshing = dashboardSummary.isFetching || statsSummary.isFetching || recentLogs.isFetching;
+  const lastRefresh = dashboardSummary.dataUpdatedAt ? new Date(dashboardSummary.dataUpdatedAt) : new Date();
+
+  if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
@@ -87,14 +68,14 @@ const Dashboard = () => {
     );
   }
 
-  if (error && !dashboardData) {
+  if (errorMessage && !dashboardSummary.data) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
           <FiXCircle className="w-8 h-8 mx-auto text-red-600 mb-4" />
-          <p className="text-gray-600 mb-4">Error: {error}</p>
+          <p className="text-gray-600 mb-4">Error: {errorMessage}</p>
           <button
-            onClick={fetchDashboardData}
+            onClick={handleManualRefresh}
             className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
           >
             Retry
@@ -103,13 +84,6 @@ const Dashboard = () => {
       </div>
     );
   }
-
-  const dashboard = dashboardData || {};
-  const stats = statsData || {};
-  const threats = dashboard?.threats || {};
-  const systemHealth = dashboard?.system_health || {};
-  const activeAlerts = dashboard?.active_alerts || [];
-  const topIPs = dashboard?.top_ips || [];
 
   // Calculate security score
   const securityScore = calculateSecurityScore(
@@ -133,11 +107,11 @@ const Dashboard = () => {
             </p>
           </div>
           <div className="flex items-center gap-4">
-            {mlStatus && (
+            {mlStatusData && (
               <div className="flex items-center gap-2">
-                <div className={`w-3 h-3 rounded-full ${mlStatus.available ? 'bg-green-500' : 'bg-orange-500'}`} />
+                <div className={`w-3 h-3 rounded-full ${mlStatusData.available ? 'bg-green-500' : 'bg-orange-500'}`} />
                 <span className="text-sm text-gray-600">
-                  ML {mlStatus.available ? 'Available' : 'Fallback'}
+                  ML {mlStatusData.available ? 'Available' : 'Fallback'}
                 </span>
               </div>
             )}
@@ -312,7 +286,7 @@ const Dashboard = () => {
 
         <div className="bg-white rounded-lg shadow-sm p-6">
           <h2 className="text-xl font-bold text-gray-900 mb-4">Recent Activity Timeline</h2>
-          <RecentActivityTimeline logs={recentLogs} />
+          <RecentActivityTimeline logs={recentLogsList} />
         </div>
       </div>
     </div>
