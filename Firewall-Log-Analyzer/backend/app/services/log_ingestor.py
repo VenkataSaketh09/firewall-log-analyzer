@@ -7,6 +7,7 @@ from app.services.iptables_parser import parse_iptables_log
 from app.services.syslog_parser import parse_syslog
 from app.services.sql_parser import parse_sql_log
 from app.db.mongo import logs_collection
+from app.services.raw_log_broadcaster import raw_log_broadcaster
 
 # Log file paths for network engineers
 AUTH_LOG = "/var/log/auth.log"
@@ -36,6 +37,10 @@ def follow(file_path):
 def ingest_auth_logs():
     """Ingest authentication logs (SSH, login attempts)"""
     for line in follow(AUTH_LOG):
+        # Broadcast raw line to WebSocket clients
+        raw_log_broadcaster.broadcast("auth", line)
+        
+        # Existing parsing and storage
         log = parse_auth_log(line)
         if log:
             logs_collection.insert_one(log)
@@ -43,6 +48,10 @@ def ingest_auth_logs():
 def ingest_ufw_logs():
     """Ingest UFW (Uncomplicated Firewall) logs"""
     for line in follow(UFW_LOG):
+        # Broadcast raw line to WebSocket clients
+        raw_log_broadcaster.broadcast("ufw", line)
+        
+        # Existing parsing and storage
         log = parse_ufw_log(line)
         if log:
             logs_collection.insert_one(log)
@@ -50,7 +59,10 @@ def ingest_ufw_logs():
 def ingest_kern_logs():
     """Ingest kernel logs (iptables/netfilter firewall logs)"""
     for line in follow(KERN_LOG):
-        # Only process iptables-related kernel logs
+        # Broadcast raw line to WebSocket clients (all kern logs, not just iptables)
+        raw_log_broadcaster.broadcast("kern", line)
+        
+        # Only process iptables-related kernel logs for parsing
         if "kernel:" in line and ("SRC=" in line or "iptables" in line.lower()):
             log = parse_iptables_log(line)
             if log:
@@ -59,7 +71,10 @@ def ingest_kern_logs():
 def ingest_syslog():
     """Ingest general syslog entries (security events, SQL access, etc.)"""
     for line in follow(SYSLOG):
-        # Skip if already processed by auth.log or kern.log
+        # Broadcast raw line to WebSocket clients (all syslog, not filtered)
+        raw_log_broadcaster.broadcast("syslog", line)
+        
+        # Skip if already processed by auth.log or kern.log for parsing
         if "sshd" in line.lower() or "kernel:" in line:
             continue
         log = parse_syslog(line)
@@ -69,7 +84,10 @@ def ingest_syslog():
 def ingest_messages():
     """Ingest /var/log/messages (alternative syslog location)"""
     for line in follow(MESSAGES):
-        # Skip if already processed by other log files
+        # Broadcast raw line to WebSocket clients (all messages, not filtered)
+        raw_log_broadcaster.broadcast("messages", line)
+        
+        # Skip if already processed by other log files for parsing
         if "sshd" in line.lower() or "kernel:" in line:
             continue
         log = parse_syslog(line)

@@ -8,12 +8,15 @@ from app.routes.ip_reputation import router as ip_reputation_router
 from app.routes.dashboard import router as dashboard_router
 from app.routes.alerts import router as alerts_router
 from app.routes.ml import router as ml_router
+from app.routes.websocket import router as websocket_router
 from app.middleware.rate_limit import RateLimitMiddleware
 from app.config import validate_environment
 from app.services.retention_service import start_log_retention_worker
 from app.services.ml_service import ml_service
 from app.services.ml_auto_retrain_worker import start_auto_retrain_worker
 from app.services.log_ingestor import start_log_ingestion
+from app.services.raw_log_broadcaster import raw_log_broadcaster
+import asyncio
 from datetime import datetime
 import sys
 
@@ -51,11 +54,27 @@ app.include_router(ip_reputation_router)
 app.include_router(dashboard_router)
 app.include_router(alerts_router)
 app.include_router(ml_router)
+app.include_router(websocket_router)
 
 
 @app.on_event("startup")
 async def startup_event():
     """Initialize services on startup"""
+    # Set event loop for raw log broadcaster (for async operations from sync threads)
+    try:
+        loop = asyncio.get_event_loop()
+        raw_log_broadcaster.set_event_loop(loop)
+        print("✓ Raw log broadcaster initialized with event loop")
+    except Exception as e:
+        print(f"! Warning: Could not set event loop for broadcaster: {e}")
+        # Try to get the running loop
+        try:
+            loop = asyncio.get_running_loop()
+            raw_log_broadcaster.set_event_loop(loop)
+            print("✓ Raw log broadcaster initialized with running event loop")
+        except Exception as e2:
+            print(f"! Warning: Could not get running event loop: {e2}")
+    
     # Start log retention worker
     start_log_retention_worker()
     print("✓ Log retention worker started")
@@ -79,6 +98,18 @@ async def startup_event():
 @app.get("/health")
 def health_check():
     return {"status": "Backend is running"}
+
+
+@app.get("/health/websocket")
+def websocket_health_check():
+    """Check if WebSocket route is registered"""
+    from app.routes.websocket import router as ws_router
+    routes = [str(r.path) for r in ws_router.routes]
+    return {
+        "status": "WebSocket routes registered",
+        "routes": routes,
+        "connection_count": raw_log_broadcaster.get_connection_count()
+    }
 
 
 @app.get("/health/ml")

@@ -1,12 +1,32 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { FiDownload, FiRefreshCw, FiFileText, FiFile, FiFileMinus } from 'react-icons/fi';
+import { FiDownload, FiRefreshCw, FiFileText, FiFile, FiFileMinus, FiRadio } from 'react-icons/fi';
 import { getLogs, exportLogsCSV, exportLogsJSON, exportLogsPDF, exportSelectedLogsPDF } from '../services/logsService';
 import { formatDateForAPI } from '../utils/dateUtils';
 import LogFilterPanel from '../components/logs/LogFilterPanel';
 import LogsTable from '../components/logs/LogsTable';
 import LogDetailsModal from '../components/logs/LogDetailsModal';
+import LogSourceTabs from '../components/logs/LogSourceTabs';
+import RawLogViewer from '../components/logs/RawLogViewer';
+import { useRawLogWebSocket } from '../hooks/useRawLogWebSocket';
 
 const Logs = () => {
+  // Live monitoring state
+  const [liveMode, setLiveMode] = useState(false);
+  const [activeLogSource, setActiveLogSource] = useState('all');
+  
+  // WebSocket hook for live logs
+  const {
+    connected,
+    logs: rawLogs,
+    error: wsError,
+    connectionStatus,
+    connect,
+    disconnect,
+    subscribe,
+    unsubscribe,
+    clearLogs
+  } = useRawLogWebSocket();
+
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -87,8 +107,47 @@ const Logs = () => {
   }, [pagination.page, pagination.page_size, sortBy, sortOrder, filters]);
 
   useEffect(() => {
-    fetchLogs();
-  }, [fetchLogs]);
+    if (!liveMode) {
+      fetchLogs();
+    }
+  }, [fetchLogs, liveMode]);
+
+  // Handle live mode toggle
+  useEffect(() => {
+    if (liveMode) {
+      connect();
+    } else {
+      disconnect();
+      clearLogs();
+    }
+  }, [liveMode, connect, disconnect, clearLogs]);
+
+  // Handle log source change in live mode
+  useEffect(() => {
+    if (liveMode && connected) {
+      // Unsubscribe from previous source if not "all"
+      if (activeLogSource !== 'all') {
+        subscribe(activeLogSource);
+      } else {
+        subscribe('all');
+      }
+    }
+  }, [liveMode, connected, activeLogSource, subscribe]);
+
+  // Handle log source change
+  const handleLogSourceChange = (source) => {
+    setActiveLogSource(source);
+    if (liveMode && connected) {
+      // Clear current logs when switching sources
+      clearLogs();
+      subscribe(source);
+    }
+  };
+
+  // Toggle live mode
+  const handleToggleLiveMode = () => {
+    setLiveMode(!liveMode);
+  };
 
   // Close export menu when clicking outside
   useEffect(() => {
@@ -290,14 +349,28 @@ const Logs = () => {
             <p className="text-gray-600 mt-1">Browse and analyze firewall logs</p>
           </div>
           <div className="flex items-center gap-3">
+            {/* Live Mode Toggle */}
             <button
-              onClick={fetchLogs}
-              disabled={loading}
-              className="px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700 disabled:opacity-50 flex items-center gap-2"
+              onClick={handleToggleLiveMode}
+              className={`px-4 py-2 rounded-md flex items-center gap-2 transition-colors ${
+                liveMode
+                  ? 'bg-red-600 text-white hover:bg-red-700'
+                  : 'bg-green-600 text-white hover:bg-green-700'
+              }`}
             >
-              <FiRefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-              Refresh
+              <FiRadio className={`w-4 h-4 ${liveMode ? 'animate-pulse' : ''}`} />
+              {liveMode ? 'Stop Live' : 'Live Monitoring'}
             </button>
+            {!liveMode && (
+              <button
+                onClick={fetchLogs}
+                disabled={loading}
+                className="px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700 disabled:opacity-50 flex items-center gap-2"
+              >
+                <FiRefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+                Refresh
+              </button>
+            )}
             <div className="relative" ref={exportMenuRef}>
               <button 
                 className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 flex items-center gap-2"
@@ -353,12 +426,37 @@ const Logs = () => {
           </div>
         </div>
 
-        {/* Filters */}
-        <LogFilterPanel
-          filters={filters}
-          onFilterChange={handleFilterChange}
-          onReset={handleResetFilters}
-        />
+        {/* Live Mode View */}
+        {liveMode ? (
+          <>
+            {/* Log Source Tabs */}
+            <LogSourceTabs
+              activeSource={activeLogSource}
+              onSourceChange={handleLogSourceChange}
+            />
+            
+            {/* WebSocket Error Display */}
+            {wsError && (
+              <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg">
+                <p className="text-red-800">WebSocket Error: {wsError}</p>
+              </div>
+            )}
+            
+            {/* Raw Log Viewer */}
+            <RawLogViewer
+              logs={rawLogs}
+              connectionStatus={connectionStatus}
+              onClear={clearLogs}
+            />
+          </>
+        ) : (
+          <>
+            {/* Filters */}
+            <LogFilterPanel
+              filters={filters}
+              onFilterChange={handleFilterChange}
+              onReset={handleResetFilters}
+            />
 
         {/* Bulk Actions */}
         {selectedLogs.length > 0 && (
@@ -495,6 +593,8 @@ const Logs = () => {
                 </button>
               </div>
             </div>
+          </>
+        )}
           </>
         )}
       </div>
