@@ -78,11 +78,12 @@ class RawLogBroadcaster:
     async def _broadcast_async(self, log_source: str, raw_line: str):
         """
         Internal async method to broadcast a raw log line.
+        Optimized for low latency - sends immediately without batching.
         """
         if not raw_line or not raw_line.strip():
             return
         
-        # Create message payload
+        # Create message payload (minimal processing for speed)
         message = {
             "type": "raw_log",
             "log_source": log_source,
@@ -92,30 +93,46 @@ class RawLogBroadcaster:
         
         message_json = json.dumps(message)
         
-        # Get list of connections to send to (with lock)
+        # Get list of connections to send to (with lock - minimize lock time)
         connections_to_send = []
+        websockets_to_send = []
         with self.lock:
             for conn_id, subscriptions in self.subscriptions.items():
                 if "all" in subscriptions or log_source in subscriptions:
-                    if conn_id in self.connections:
+                    websocket = self.connections.get(conn_id)
+                    if websocket:
                         connections_to_send.append(conn_id)
+                        websockets_to_send.append(websocket)
         
-        # Send to all subscribed connections (without holding lock)
-        disconnected = []
-        for conn_id in connections_to_send:
-            try:
-                websocket = self.connections.get(conn_id)
-                if websocket:
-                    await websocket.send_text(message_json)
-            except Exception as e:
-                print(f"✗ Error sending to {conn_id}: {e}")
-                disconnected.append(conn_id)
-        
-        # Remove disconnected connections
-        if disconnected:
-            with self.lock:
-                for conn_id in disconnected:
-                    self.remove_connection(conn_id)
+        # Send to all subscribed connections in parallel (without holding lock)
+        # Use asyncio.gather for concurrent sends to reduce latency
+        if websockets_to_send:
+            send_tasks = []
+            for websocket in websockets_to_send:
+                send_tasks.append(self._send_safe(websocket, message_json))
+            
+            # Wait for all sends to complete (or fail)
+            results = await asyncio.gather(*send_tasks, return_exceptions=True)
+            
+            # Remove disconnected connections
+            disconnected = []
+            for i, result in enumerate(results):
+                if isinstance(result, Exception) or result is False:
+                    disconnected.append(connections_to_send[i])
+            
+            if disconnected:
+                with self.lock:
+                    for conn_id in disconnected:
+                        self.remove_connection(conn_id)
+    
+    async def _send_safe(self, websocket: WebSocket, message: str) -> bool:
+        """Safely send a message to a websocket, return True if successful"""
+        try:
+            await websocket.send_text(message)
+            return True
+        except Exception as e:
+            print(f"✗ Error sending to websocket: {e}")
+            return False
     
     def broadcast(self, log_source: str, raw_line: str):
         """

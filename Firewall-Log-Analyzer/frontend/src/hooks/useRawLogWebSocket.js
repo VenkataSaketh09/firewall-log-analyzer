@@ -12,6 +12,9 @@ export const useRawLogWebSocket = () => {
   const reconnectAttemptsRef = useRef(0);
   const maxReconnectAttempts = 5;
   const reconnectDelay = 3000; // 3 seconds
+  // Cache logs per source for instant switching
+  const logsCacheRef = useRef({}); // { 'auth': [...], 'ufw': [...], etc. }
+  const MAX_CACHED_LOGS_PER_SOURCE = 5000; // Keep last 5000 logs per source
 
   const connect = useCallback(() => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
@@ -37,11 +40,33 @@ export const useRawLogWebSocket = () => {
           const message = JSON.parse(event.data);
           
           if (message.type === 'raw_log') {
-            // Add new log to the list
+            // Cache log by source for instant switching
+            const logSource = message.log_source || 'all';
+            if (!logsCacheRef.current[logSource]) {
+              logsCacheRef.current[logSource] = [];
+            }
+            
+            // Add to cache (keep last MAX_CACHED_LOGS_PER_SOURCE)
+            logsCacheRef.current[logSource] = [
+              ...logsCacheRef.current[logSource],
+              message
+            ].slice(-MAX_CACHED_LOGS_PER_SOURCE);
+            
+            // Also add to 'all' cache if not already there
+            if (logSource !== 'all') {
+              if (!logsCacheRef.current['all']) {
+                logsCacheRef.current['all'] = [];
+              }
+              logsCacheRef.current['all'] = [
+                ...logsCacheRef.current['all'],
+                message
+              ].slice(-MAX_CACHED_LOGS_PER_SOURCE);
+            }
+            
+            // Update current logs (will be filtered by activeLogSource in component)
             setLogs((prevLogs) => {
-              // Keep only last 5000 logs to prevent memory issues
               const newLogs = [...prevLogs, message];
-              return newLogs.slice(-5000);
+              return newLogs.slice(-MAX_CACHED_LOGS_PER_SOURCE);
             });
           } else if (message.type === 'connected') {
             console.log('✓ WebSocket connection confirmed:', message.message);
@@ -127,6 +152,23 @@ export const useRawLogWebSocket = () => {
     setLogs([]);
   }, []);
 
+  // Get cached logs for a specific source (for instant switching)
+  const getCachedLogs = useCallback((logSource) => {
+    if (logSource === 'all') {
+      return logsCacheRef.current['all'] || [];
+    }
+    return logsCacheRef.current[logSource] || [];
+  }, []);
+
+  // Clear cache for a specific source
+  const clearCache = useCallback((logSource) => {
+    if (logSource) {
+      delete logsCacheRef.current[logSource];
+    } else {
+      logsCacheRef.current = {};
+    }
+  }, []);
+
   // Cleanup on unmount
   useEffect(() => {
     return () => {
@@ -143,7 +185,9 @@ export const useRawLogWebSocket = () => {
     disconnect,
     subscribe,
     unsubscribe,
-    clearLogs
+    clearLogs,
+    getCachedLogs,
+    clearCache
   };
 };
 

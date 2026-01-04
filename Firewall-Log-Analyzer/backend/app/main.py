@@ -17,6 +17,7 @@ from app.services.ml_auto_retrain_worker import start_auto_retrain_worker
 from app.services.log_ingestor import start_log_ingestion
 from app.services.raw_log_broadcaster import raw_log_broadcaster
 from app.services.alert_monitor_worker import alert_monitor_worker
+from app.services.redis_cache import redis_log_cache
 import asyncio
 from datetime import datetime
 import sys
@@ -61,6 +62,12 @@ app.include_router(websocket_router)
 @app.on_event("startup")
 async def startup_event():
     """Initialize services on startup"""
+    # Initialize Redis cache (will fallback to in-memory if Redis unavailable)
+    if redis_log_cache.enabled:
+        print("✓ Redis cache initialized")
+    else:
+        print("! Redis cache not available - using in-memory fallback")
+    
     # Set event loop for raw log broadcaster (for async operations from sync threads)
     try:
         loop = asyncio.get_event_loop()

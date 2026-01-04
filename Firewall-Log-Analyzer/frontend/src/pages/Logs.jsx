@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { FiDownload, FiRefreshCw, FiFileText, FiFile, FiFileMinus, FiRadio } from 'react-icons/fi';
-import { getLogs, exportLogsCSV, exportLogsJSON, exportLogsPDF, exportSelectedLogsPDF } from '../services/logsService';
+import { getLogs, exportLogsCSV, exportLogsJSON, exportLogsPDF, exportSelectedLogsPDF, getCachedLogs } from '../services/logsService';
 import { formatDateForAPI } from '../utils/dateUtils';
 import LogFilterPanel from '../components/logs/LogFilterPanel';
 import LogsTable from '../components/logs/LogsTable';
@@ -24,7 +24,8 @@ const Logs = () => {
     disconnect,
     subscribe,
     unsubscribe,
-    clearLogs
+    clearLogs,
+    getCachedLogs
   } = useRawLogWebSocket();
 
   const [logs, setLogs] = useState([]);
@@ -125,22 +126,47 @@ const Logs = () => {
   // Handle log source change in live mode
   useEffect(() => {
     if (liveMode && connected) {
-      // Unsubscribe from previous source if not "all"
-      if (activeLogSource !== 'all') {
-        subscribe(activeLogSource);
-      } else {
+      // Subscribe to the active source
+      if (activeLogSource === 'all') {
         subscribe('all');
+      } else {
+        subscribe(activeLogSource);
       }
     }
   }, [liveMode, connected, activeLogSource, subscribe]);
 
-  // Handle log source change
-  const handleLogSourceChange = (source) => {
+  // Handle log source change with Redis caching
+  const handleLogSourceChange = async (source) => {
+    const previousSource = activeLogSource;
     setActiveLogSource(source);
+    
     if (liveMode && connected) {
-      // Clear current logs when switching sources
-      clearLogs();
-      subscribe(source);
+      // Unsubscribe from previous source
+      if (previousSource && previousSource !== 'all') {
+        unsubscribe(previousSource);
+      }
+      
+      // Subscribe to new source
+      if (source === 'all') {
+        subscribe('all');
+      } else {
+        subscribe(source);
+      }
+      
+      // Fetch cached logs from Redis for instant display
+      try {
+        const cachedData = await getCachedLogs(source);
+        if (cachedData && cachedData.logs && cachedData.logs.length > 0) {
+          // Set cached logs immediately for instant switching
+          // The WebSocket will continue to add new logs
+          // Note: We'll merge these with WebSocket logs in RawLogViewer
+        }
+      } catch (error) {
+        console.error('Error fetching cached logs:', error);
+        // Continue without cached logs - WebSocket will provide real-time logs
+      }
+      
+      // Don't clear logs - they're cached in Redis and will be merged with WebSocket logs
     }
   };
 
@@ -445,6 +471,7 @@ const Logs = () => {
             {/* Raw Log Viewer */}
             <RawLogViewer
               logs={rawLogs}
+              activeLogSource={activeLogSource}
               connectionStatus={connectionStatus}
               onClear={clearLogs}
             />
