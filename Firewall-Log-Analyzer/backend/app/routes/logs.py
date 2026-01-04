@@ -10,6 +10,7 @@ from app.services.log_queries import get_logs, get_log_by_id, get_statistics, ge
 from app.services.export_service import export_logs_to_pdf
 from app.services.virustotal_service import get_multiple_ip_reputations, enhance_severity_with_reputation
 from app.services.log_parser_service import parse_multiple_logs
+from app.services.redis_cache import redis_log_cache
 from app.middleware.auth_middleware import verify_api_key
 from app.schemas.log_schema import LogResponse, LogsResponse, StatsResponse, TopIPResponse, TopPortResponse, VirusTotalReputation
 from app.schemas.ingestion_schema import LogIngestionRequest, LogIngestionResponse
@@ -550,4 +551,83 @@ def get_top_ports_endpoint(
         return [TopPortResponse(**port) for port in top_ports]
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error retrieving top ports: {str(e)}")
+
+
+@router.get("/cache/{log_source}")
+def get_cached_logs_endpoint(
+    log_source: str,
+    limit: Optional[int] = Query(None, ge=1, le=10000, description="Maximum number of logs to return")
+):
+    """
+    Get cached logs for a specific source from Redis.
+    Used for instant switching between log sources in live monitoring.
+    
+    Args:
+        log_source: Source of the logs (auth, ufw, kern, syslog, messages, all)
+        limit: Maximum number of logs to return (default: all cached)
+    
+    Returns:
+        List of cached log entries
+    """
+    try:
+        # Validate log source
+        valid_sources = ["auth", "ufw", "kern", "syslog", "messages", "all"]
+        if log_source not in valid_sources:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid log source: {log_source}. Valid sources: {', '.join(valid_sources)}"
+            )
+        
+        # Get cached logs from Redis
+        cached_logs = redis_log_cache.get_logs(log_source, limit=limit)
+        
+        return {
+            "log_source": log_source,
+            "count": len(cached_logs),
+            "logs": cached_logs,
+            "cache_enabled": redis_log_cache.enabled
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error retrieving cached logs: {str(e)}")
+
+
+@router.get("/cache/stats")
+def get_cache_stats_endpoint():
+    """
+    Get Redis cache statistics.
+    Returns information about cached logs per source.
+    """
+    try:
+        stats = redis_log_cache.get_cache_stats()
+        return stats
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error retrieving cache stats: {str(e)}")
+
+
+@router.delete("/cache")
+def clear_cache_endpoint(
+    log_source: Optional[str] = Query(None, description="Log source to clear (auth, ufw, kern, syslog, messages, all). If not provided, clears all caches")
+):
+    """
+    Clear cached logs for a specific source or all sources.
+    
+    Args:
+        log_source: Source to clear (auth, ufw, kern, syslog, messages, all). 
+                   If not provided, clears all caches.
+    """
+    try:
+        success = redis_log_cache.clear_cache(log_source)
+        if success:
+            return {
+                "success": True,
+                "message": f"Cache cleared for {log_source if log_source else 'all sources'}"
+            }
+        else:
+            raise HTTPException(status_code=500, detail="Failed to clear cache")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error clearing cache: {str(e)}")
 

@@ -9,6 +9,22 @@ from app.services.ddos_detection import detect_ddos
 from app.services.port_scan_detection import detect_port_scan
 
 
+def _sanitize_for_mongodb(obj: Any) -> Any:
+    """
+    Recursively sanitize data structures to ensure all dictionary keys are strings.
+    MongoDB requires all document keys to be strings.
+    """
+    if isinstance(obj, dict):
+        return {str(k): _sanitize_for_mongodb(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [_sanitize_for_mongodb(item) for item in obj]
+    elif isinstance(obj, (int, float)) and not isinstance(obj, bool):
+        # Keep numbers as-is, but ensure they're not used as keys
+        return obj
+    else:
+        return obj
+
+
 def floor_datetime(dt: datetime, minutes: int = 5) -> datetime:
     """Floor a UTC datetime to the nearest N-minute boundary."""
     if minutes <= 0:
@@ -73,7 +89,7 @@ def compute_alert_docs(
                 "last_seen": d.get("last_attempt"),
                 "count": int(d.get("total_attempts") or 0),
                 "description": f"Brute force attack: {int(d.get('total_attempts') or 0)} failed login attempts",
-                "details": d,
+                "details": _sanitize_for_mongodb(d),
                 "computed_at": now,
             }
         )
@@ -101,7 +117,7 @@ def compute_alert_docs(
                 "last_seen": d.get("last_request"),
                 "count": int(d.get("total_requests") or 0),
                 "description": description,
-                "details": d,
+                "details": _sanitize_for_mongodb(d),
                 "computed_at": now,
             }
         )
@@ -118,7 +134,7 @@ def compute_alert_docs(
                 "last_seen": d.get("last_attempt"),
                 "count": int(d.get("total_attempts") or 0),
                 "description": f"Port scan detected: {int(d.get('unique_ports_attempted') or 0)} unique ports attempted",
-                "details": d,
+                "details": _sanitize_for_mongodb(d),
                 "computed_at": now,
             }
         )
@@ -159,6 +175,9 @@ def get_cached_alert_docs(
             }
         )
     )
+    # Sanitize any existing data that might have numeric keys
+    if docs:
+        docs = [_sanitize_for_mongodb(doc) for doc in docs]
     return docs or None
 
 

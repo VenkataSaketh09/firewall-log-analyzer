@@ -136,3 +136,23 @@ export const exportSelectedLogsPDF = async (logIds = []) => {
   return response.data;
 };
 
+/**
+ * Get cached logs from Redis for a specific source
+ * Used for instant switching between log sources in live monitoring
+ */
+export const getCachedLogs = async (logSource, limit = null) => {
+  const params = {};
+  if (limit) params.limit = limit;
+  
+  const response = await api.get(`/api/logs/cache/${logSource}`, { params });
+  return response.data;
+};
+
+/**
+ * Get Redis cache statistics
+ */
+export const getCacheStats = async () => {
+  const response = await api.get('/api/logs/cache/stats');
+  return response.data;
+};
+

@@ -13,6 +13,7 @@ logs_collection = db.firewall_logs
 ip_reputation_cache = db.ip_reputation_cache
 saved_reports_collection = db.saved_reports
 alerts_collection = db.alerts
+email_notifications_collection = db.email_notifications
 
 # ML collections (Phase 7)
 ml_predictions_collection = db.ml_predictions
@@ -86,6 +87,11 @@ def create_indexes():
             expireAfterSeconds=ttl_seconds,
             name="ml_feat_cache_created_at_ttl",
         )
+        
+        # Email notifications collection indexes
+        email_notifications_collection.create_index([("email_sent_at", DESCENDING)], name="email_notif_sent_at_desc")
+        email_notifications_collection.create_index([("deduplication_key", ASCENDING)], unique=True, name="email_notif_dedup_key_unique")
+        email_notifications_collection.create_index([("alert_type", ASCENDING), ("source_ip", ASCENDING), ("email_sent_at", DESCENDING)], name="email_notif_type_ip_sent")
         
         print("Database indexes created successfully")
     except Exception as e:
