@@ -51,7 +51,11 @@ def _apply_report_includes(
 
 @router.get("/daily", response_model=DailyReportResponse)
 def get_daily_report(
-    date: Optional[str] = Query(None, description="Date for the report (YYYY-MM-DD format, default: today)")
+    date: Optional[str] = Query(None, description="Date for the report (YYYY-MM-DD format, default: today)"),
+    include_charts: bool = Query(True, description="Include charts/statistics sections"),
+    include_summary: bool = Query(True, description="Include executive summary section"),
+    include_threats: bool = Query(True, description="Include threats sections"),
+    include_logs: bool = Query(False, description="Include detailed logs section (may be truncated)")
 ):
     """
     Generate a daily security report.
@@ -74,7 +78,13 @@ def get_daily_report(
                     detail="Invalid date format. Use YYYY-MM-DD format."
                 )
         
-        report_data = generate_daily_report(date=report_date)
+        report_data = generate_daily_report(
+            date=report_date,
+            include_charts=include_charts,
+            include_summary=include_summary,
+            include_threats=include_threats,
+            include_logs=include_logs,
+        )
         
         # Convert to response model
         report = SecurityReport(**report_data)
@@ -88,7 +98,11 @@ def get_daily_report(
 
 @router.get("/weekly", response_model=WeeklyReportResponse)
 def get_weekly_report(
-    start_date: Optional[str] = Query(None, description="Start date of the week (YYYY-MM-DD format, default: 7 days ago)")
+    start_date: Optional[str] = Query(None, description="Start date of the week (YYYY-MM-DD format, default: 7 days ago)"),
+    include_charts: bool = Query(True, description="Include charts/statistics sections"),
+    include_summary: bool = Query(True, description="Include executive summary section"),
+    include_threats: bool = Query(True, description="Include threats sections"),
+    include_logs: bool = Query(False, description="Include detailed logs section (may be truncated)")
 ):
     """
     Generate a weekly security report.
@@ -111,7 +125,13 @@ def get_weekly_report(
                     detail="Invalid date format. Use YYYY-MM-DD format."
                 )
         
-        report_data = generate_weekly_report(start_date=week_start)
+        report_data = generate_weekly_report(
+            start_date=week_start,
+            include_charts=include_charts,
+            include_summary=include_summary,
+            include_threats=include_threats,
+            include_logs=include_logs,
+        )
         
         # Convert to response model
         report = SecurityReport(**report_data)
@@ -225,7 +245,13 @@ def export_report(
                         status_code=400,
                         detail="Invalid date format. Use YYYY-MM-DD format."
                     )
-            report_data = generate_daily_report(date=report_date)
+            report_data = generate_daily_report(
+                date=report_date,
+                include_charts=include_charts,
+                include_summary=include_summary,
+                include_threats=include_threats,
+                include_logs=include_logs,
+            )
         
         elif export_request.report_type.upper() == "WEEKLY":
             week_start = None
@@ -237,7 +263,13 @@ def export_report(
                         status_code=400,
                         detail="Invalid start_date format. Use YYYY-MM-DD format."
                     )
-            report_data = generate_weekly_report(start_date=week_start)
+            report_data = generate_weekly_report(
+                start_date=week_start,
+                include_charts=include_charts,
+                include_summary=include_summary,
+                include_threats=include_threats,
+                include_logs=include_logs,
+            )
         
         elif export_request.report_type.upper() == "CUSTOM":
             if not export_request.start_date or not export_request.end_date:
@@ -275,7 +307,14 @@ def export_report(
                     detail="start_date must be before end_date"
                 )
             
-            report_data = generate_custom_report(start_date=start_dt, end_date=end_dt)
+            report_data = generate_custom_report(
+                start_date=start_dt,
+                end_date=end_dt,
+                include_charts=include_charts,
+                include_summary=include_summary,
+                include_threats=include_threats,
+                include_logs=include_logs,
+            )
         
         else:
             raise HTTPException(

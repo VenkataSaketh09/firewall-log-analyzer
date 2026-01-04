@@ -33,18 +33,27 @@ const Reports = () => {
     { id: 'custom', label: 'Custom Report' },
   ];
 
+  // Options object for all report types
+  const reportOptions = {
+    include_charts: config.include_charts,
+    include_summary: config.include_summary,
+    include_threats: config.include_threats,
+    include_logs: config.include_logs,
+  };
+
   // React Query hooks - only enabled when shouldFetch is true
-  const dailyReportQuery = useDailyReport(shouldFetch && reportType === 'daily' ? config.date : null);
-  const weeklyReportQuery = useWeeklyReport(shouldFetch && reportType === 'weekly' ? config.week_start : null);
+  const dailyReportQuery = useDailyReport(
+    shouldFetch && reportType === 'daily' ? config.date : null,
+    shouldFetch && reportType === 'daily' ? reportOptions : {}
+  );
+  const weeklyReportQuery = useWeeklyReport(
+    shouldFetch && reportType === 'weekly' ? config.week_start : null,
+    shouldFetch && reportType === 'weekly' ? reportOptions : {}
+  );
   const customReportQuery = useCustomReport(
     shouldFetch && reportType === 'custom' && config.start_date && config.end_date ? config.start_date : null,
     shouldFetch && reportType === 'custom' && config.start_date && config.end_date ? config.end_date : null,
-    shouldFetch && reportType === 'custom' ? {
-      include_charts: config.include_charts,
-      include_summary: config.include_summary,
-      include_threats: config.include_threats,
-      include_logs: config.include_logs,
-    } : {}
+    shouldFetch && reportType === 'custom' ? reportOptions : {}
   );
 
   const mlStatusQuery = useMLStatus();
