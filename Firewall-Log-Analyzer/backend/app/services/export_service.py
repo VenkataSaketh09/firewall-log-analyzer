@@ -348,21 +348,30 @@ def export_to_pdf(report_data: Dict[str, Any]) -> bytes:
     if log_stats:
         story.append(Paragraph("Top Source IPs", styles["Heading2"]))
         top_ips = log_stats.get("top_source_ips", []) or []
+        
+        # Create smaller style for table text
+        table_style_small = styles["Normal"].clone("TableStyleSmall")
+        table_style_small.fontSize = 8
+        table_style_small.leading = 10
+        
         ip_table_data = [["IP Address", "Total", "HIGH", "MEDIUM", "LOW"]]
         for ip_info in top_ips[:10]:
             sev = ip_info.get("severity_breakdown", {}) or {}
             ip_table_data.append([
-                str(ip_info.get("source_ip", "")),
-                str(ip_info.get("count", 0)),
-                str(sev.get("HIGH", 0)),
-                str(sev.get("MEDIUM", 0)),
-                str(sev.get("LOW", 0)),
+                Paragraph(str(ip_info.get("source_ip", "")), table_style_small),
+                Paragraph(str(ip_info.get("count", 0)), table_style_small),
+                Paragraph(str(sev.get("HIGH", 0)), table_style_small),
+                Paragraph(str(sev.get("MEDIUM", 0)), table_style_small),
+                Paragraph(str(sev.get("LOW", 0)), table_style_small),
             ])
-        ip_table = Table(ip_table_data, colWidths=[170, 70, 70, 70, 70])
+        ip_table = Table(ip_table_data, colWidths=[150, 60, 60, 60, 60])
         ip_table.setStyle(TableStyle([
             ("BACKGROUND", (0, 0), (-1, 0), colors.lightgrey),
             ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
             ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("FONTSIZE", (0, 0), (-1, -1), 8),
+            ("LEFTPADDING", (0, 0), (-1, -1), 4),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 4),
         ]))
         story.append(ip_table)
         story.append(Spacer(1, 14))
@@ -373,15 +382,18 @@ def export_to_pdf(report_data: Dict[str, Any]) -> bytes:
         port_table_data = [["Port", "Count", "Protocol"]]
         for p in top_ports[:10]:
             port_table_data.append([
-                str(p.get("port", "")),
-                str(p.get("count", 0)),
-                str(p.get("protocol", "") or ""),
+                Paragraph(str(p.get("port", "")), table_style_small),
+                Paragraph(str(p.get("count", 0)), table_style_small),
+                Paragraph(str(p.get("protocol", "") or ""), table_style_small),
             ])
-        port_table = Table(port_table_data, colWidths=[100, 100, 360])
+        port_table = Table(port_table_data, colWidths=[80, 80, 280])
         port_table.setStyle(TableStyle([
             ("BACKGROUND", (0, 0), (-1, 0), colors.lightgrey),
             ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
             ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("FONTSIZE", (0, 0), (-1, -1), 8),
+            ("LEFTPADDING", (0, 0), (-1, -1), 4),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 4),
         ]))
         story.append(port_table)
         story.append(Spacer(1, 14))
@@ -402,21 +414,38 @@ def export_to_pdf(report_data: Dict[str, Any]) -> bytes:
 
         story.append(Paragraph("Threat Detections - Brute Force", styles["Heading2"]))
         bf = threat_detections.get("brute_force_attacks", []) or []
+        
+        # Create smaller style for table text
+        table_style_small = styles["Normal"].clone("TableStyleSmall")
+        table_style_small.fontSize = 7
+        table_style_small.leading = 8
+        
         bf_table_data = [["Source IP", "Attempts", "Severity", "First", "Last"]]
         for a in bf[:20]:
+            # Format timestamps to be more compact
+            first_attempt = str(a.get("first_attempt", "") or "")
+            last_attempt = str(a.get("last_attempt", "") or "")
+            if first_attempt and 'T' in first_attempt:
+                first_attempt = first_attempt.split('T')[0] + '\n' + first_attempt.split('T')[1][:8] if len(first_attempt.split('T')) > 1 else first_attempt[:16]
+            if last_attempt and 'T' in last_attempt:
+                last_attempt = last_attempt.split('T')[0] + '\n' + last_attempt.split('T')[1][:8] if len(last_attempt.split('T')) > 1 else last_attempt[:16]
+            
             bf_table_data.append([
-                str(a.get("source_ip", "")),
-                str(a.get("total_attempts", 0)),
-                str(a.get("severity", "")),
-                str(a.get("first_attempt", "") or ""),
-                str(a.get("last_attempt", "") or ""),
+                Paragraph(str(a.get("source_ip", "")), table_style_small),
+                Paragraph(str(a.get("total_attempts", 0)), table_style_small),
+                Paragraph(str(a.get("severity", "")), table_style_small),
+                Paragraph(first_attempt, table_style_small),
+                Paragraph(last_attempt, table_style_small),
             ])
-        bf_table = Table(bf_table_data, colWidths=[120, 60, 70, 135, 135])
+        bf_table = Table(bf_table_data, colWidths=[100, 50, 60, 100, 100])
         bf_style = [
             ("BACKGROUND", (0, 0), (-1, 0), colors.lightgrey),
             ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
             ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("FONTSIZE", (0, 0), (-1, -1), 8),
             ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 4),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 4),
         ]
         for i, row in enumerate(bf[:20], start=1):
             bf_style.append(("BACKGROUND", (0, i), (-1, i), sev_bg(row.get("severity"))))
@@ -429,19 +458,22 @@ def export_to_pdf(report_data: Dict[str, Any]) -> bytes:
         dd_table_data = [["Type", "IPs", "Requests", "Peak Rate", "Target Port", "Severity"]]
         for a in dd[:20]:
             dd_table_data.append([
-                str(a.get("attack_type", "")),
-                str(a.get("source_ip_count", 0)),
-                str(a.get("total_requests", 0)),
-                str(a.get("peak_request_rate", 0)),
-                str(a.get("target_port", "") or ""),
-                str(a.get("severity", "")),
+                Paragraph(str(a.get("attack_type", "")), table_style_small),
+                Paragraph(str(a.get("source_ip_count", 0)), table_style_small),
+                Paragraph(str(a.get("total_requests", 0)), table_style_small),
+                Paragraph(str(a.get("peak_request_rate", 0)), table_style_small),
+                Paragraph(str(a.get("target_port", "") or ""), table_style_small),
+                Paragraph(str(a.get("severity", "")), table_style_small),
             ])
-        dd_table = Table(dd_table_data, colWidths=[140, 50, 70, 80, 90, 80])
+        dd_table = Table(dd_table_data, colWidths=[100, 40, 60, 70, 70, 60])
         dd_style = [
             ("BACKGROUND", (0, 0), (-1, 0), colors.lightgrey),
             ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
             ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("FONTSIZE", (0, 0), (-1, -1), 8),
             ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 4),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 4),
         ]
         for i, row in enumerate(dd[:20], start=1):
             dd_style.append(("BACKGROUND", (0, i), (-1, i), sev_bg(row.get("severity"))))
@@ -454,20 +486,31 @@ def export_to_pdf(report_data: Dict[str, Any]) -> bytes:
             story.append(Paragraph("Threat Detections - Port Scans", styles["Heading2"]))
             ps_table_data = [["Source IP", "Attempts", "Unique Ports", "Severity", "First", "Last"]]
             for a in ps[:20]:
+                # Format timestamps to be more compact
+                first_attempt = str(a.get("first_attempt", "") or "")
+                last_attempt = str(a.get("last_attempt", "") or "")
+                if first_attempt and 'T' in first_attempt:
+                    first_attempt = first_attempt.split('T')[0] + '\n' + first_attempt.split('T')[1][:8] if len(first_attempt.split('T')) > 1 else first_attempt[:16]
+                if last_attempt and 'T' in last_attempt:
+                    last_attempt = last_attempt.split('T')[0] + '\n' + last_attempt.split('T')[1][:8] if len(last_attempt.split('T')) > 1 else last_attempt[:16]
+                
                 ps_table_data.append([
-                    str(a.get("source_ip", "")),
-                    str(a.get("total_attempts", 0)),
-                    str(a.get("unique_ports_attempted", 0)),
-                    str(a.get("severity", "")),
-                    str(a.get("first_attempt", "") or ""),
-                    str(a.get("last_attempt", "") or ""),
+                    Paragraph(str(a.get("source_ip", "")), table_style_small),
+                    Paragraph(str(a.get("total_attempts", 0)), table_style_small),
+                    Paragraph(str(a.get("unique_ports_attempted", 0)), table_style_small),
+                    Paragraph(str(a.get("severity", "")), table_style_small),
+                    Paragraph(first_attempt, table_style_small),
+                    Paragraph(last_attempt, table_style_small),
                 ])
-            ps_table = Table(ps_table_data, colWidths=[120, 60, 75, 70, 95, 100])
+            ps_table = Table(ps_table_data, colWidths=[100, 50, 60, 60, 80, 80])
             ps_style = [
                 ("BACKGROUND", (0, 0), (-1, 0), colors.lightgrey),
                 ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
                 ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                ("FONTSIZE", (0, 0), (-1, -1), 8),
                 ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 4),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 4),
             ]
             for i, row in enumerate(ps[:20], start=1):
                 ps_style.append(("BACKGROUND", (0, i), (-1, i), sev_bg(row.get("severity"))))
@@ -487,21 +530,56 @@ def export_to_pdf(report_data: Dict[str, Any]) -> bytes:
     detailed = report_data.get("detailed_logs") or []
     if detailed:
         story.append(Paragraph("Detailed Logs (Truncated)", styles["Heading2"]))
+        
+        # Create smaller style for table text with word wrapping
+        table_style = styles["Normal"].clone("TableStyle")
+        table_style.fontSize = 7
+        table_style.leading = 8
+        table_style.wordWrap = 'CJK'  # Enable word wrapping
+        
         dl_table_data = [["Timestamp", "Source IP", "Event Type", "Severity", "Raw Log"]]
         for log in detailed[:100]:
+            # Format timestamp to be shorter and more compact
+            timestamp = log.get("timestamp", "") or ""
+            if timestamp:
+                try:
+                    # Try to format timestamp more compactly
+                    if isinstance(timestamp, str) and 'T' in timestamp:
+                        ts_parts = timestamp.split('T')
+                        timestamp = f"{ts_parts[0]}\n{ts_parts[1][:8]}" if len(ts_parts) > 1 else timestamp[:16]
+                    else:
+                        timestamp = str(timestamp)[:16]
+                except:
+                    timestamp = str(timestamp)[:16]
+            
+            # Truncate raw log to fit better
+            raw_log = str(log.get("raw_log", "") or "")
+            if len(raw_log) > 150:
+                raw_log = raw_log[:147] + "..."
+            
+            # Use Paragraph for text wrapping
             dl_table_data.append([
-                str(log.get("timestamp", "") or ""),
-                str(log.get("source_ip", "") or ""),
-                str(log.get("event_type", "") or ""),
-                str(log.get("severity", "") or ""),
-                str(log.get("raw_log", "") or "")[:200],
+                Paragraph(timestamp, table_style),
+                Paragraph(str(log.get("source_ip", "") or ""), table_style),
+                Paragraph(str(log.get("event_type", "") or ""), table_style),
+                Paragraph(str(log.get("severity", "") or ""), table_style),
+                Paragraph(raw_log, table_style),
             ])
-        dl_table = Table(dl_table_data, colWidths=[120, 90, 120, 70, 150])
+        
+        # Adjusted column widths to fit within page (total ~450 points)
+        # LETTER width is ~612, with margins ~72 each side = ~468 available
+        dl_table = Table(dl_table_data, colWidths=[90, 75, 100, 50, 135])
         dl_style = [
             ("BACKGROUND", (0, 0), (-1, 0), colors.lightgrey),
             ("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
             ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("FONTSIZE", (0, 0), (-1, 0), 8),
             ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("ALIGN", (0, 0), (-1, -1), "LEFT"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 4),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+            ("TOPPADDING", (0, 0), (-1, -1), 3),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
         ]
         for i, row in enumerate(detailed[:100], start=1):
             dl_style.append(("BACKGROUND", (0, i), (-1, i), sev_bg(row.get("severity"))))
