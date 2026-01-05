@@ -9,6 +9,7 @@ from app.routes.dashboard import router as dashboard_router
 from app.routes.alerts import router as alerts_router
 from app.routes.ml import router as ml_router
 from app.routes.websocket import router as websocket_router
+from app.routes.ip_blocking import router as ip_blocking_router
 from app.middleware.rate_limit import RateLimitMiddleware
 from app.config import validate_environment
 from app.services.retention_service import start_log_retention_worker
@@ -57,6 +58,7 @@ app.include_router(dashboard_router)
 app.include_router(alerts_router)
 app.include_router(ml_router)
 app.include_router(websocket_router)
+app.include_router(ip_blocking_router)
 
 
 @app.on_event("startup")

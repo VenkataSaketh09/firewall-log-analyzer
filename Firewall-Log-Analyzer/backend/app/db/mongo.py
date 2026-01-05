@@ -20,6 +20,9 @@ ml_predictions_collection = db.ml_predictions
 ml_training_history_collection = db.ml_training_history
 ml_features_cache_collection = db.ml_features_cache
 
+# IP Blocking collection
+blacklisted_ips_collection = db.blacklisted_ips
+
 
 def create_indexes():
     """Create database indexes for optimized queries"""
@@ -92,6 +95,11 @@ def create_indexes():
         email_notifications_collection.create_index([("email_sent_at", DESCENDING)], name="email_notif_sent_at_desc")
         email_notifications_collection.create_index([("deduplication_key", ASCENDING)], unique=True, name="email_notif_dedup_key_unique")
         email_notifications_collection.create_index([("alert_type", ASCENDING), ("source_ip", ASCENDING), ("email_sent_at", DESCENDING)], name="email_notif_type_ip_sent")
+        
+        # IP Blocking collection indexes
+        blacklisted_ips_collection.create_index([("ip_address", ASCENDING)], unique=True, name="blacklist_ip_unique")
+        blacklisted_ips_collection.create_index([("blocked_at", DESCENDING)], name="blacklist_blocked_at_desc")
+        blacklisted_ips_collection.create_index([("is_active", ASCENDING), ("ip_address", ASCENDING)], name="blacklist_active_ip")
         
         print("Database indexes created successfully")
     except Exception as e:
