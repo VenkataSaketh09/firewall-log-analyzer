@@ -8,12 +8,22 @@ from app.services.virustotal_service import get_multiple_ip_reputations
 from app.db.mongo import logs_collection
 
 
-def generate_daily_report(date: Optional[datetime] = None) -> Dict:
+def generate_daily_report(
+    date: Optional[datetime] = None,
+    include_charts: bool = True,
+    include_summary: bool = True,
+    include_threats: bool = True,
+    include_logs: bool = False,
+) -> Dict:
     """
     Generate a daily security report for a specific date.
     
     Args:
         date: Date to generate report for (default: today)
+        include_charts: Include chart/statistics sections
+        include_summary: Include executive summary section
+        include_threats: Include threats sections
+        include_logs: Include detailed logs section
     
     Returns:
         Dictionary containing comprehensive daily security report
@@ -24,15 +34,33 @@ def generate_daily_report(date: Optional[datetime] = None) -> Dict:
     start_date = date
     end_date = date + timedelta(days=1) - timedelta(microseconds=1)
     
-    return _generate_report(start_date, end_date, "DAILY")
+    return _generate_report(
+        start_date, 
+        end_date, 
+        "DAILY",
+        include_charts=include_charts,
+        include_summary=include_summary,
+        include_threats=include_threats,
+        include_logs=include_logs,
+    )
 
 
-def generate_weekly_report(start_date: Optional[datetime] = None) -> Dict:
+def generate_weekly_report(
+    start_date: Optional[datetime] = None,
+    include_charts: bool = True,
+    include_summary: bool = True,
+    include_threats: bool = True,
+    include_logs: bool = False,
+) -> Dict:
     """
     Generate a weekly security report for the past 7 days.
     
     Args:
         start_date: Start date of the week (default: 7 days ago)
+        include_charts: Include chart/statistics sections
+        include_summary: Include executive summary section
+        include_threats: Include threats sections
+        include_logs: Include detailed logs section
     
     Returns:
         Dictionary containing comprehensive weekly security report
@@ -44,7 +72,15 @@ def generate_weekly_report(start_date: Optional[datetime] = None) -> Dict:
     
     end_date = datetime.utcnow()
     
-    return _generate_report(start_date, end_date, "WEEKLY")
+    return _generate_report(
+        start_date, 
+        end_date, 
+        "WEEKLY",
+        include_charts=include_charts,
+        include_summary=include_summary,
+        include_threats=include_threats,
+        include_logs=include_logs,
+    )
 
 
 def generate_custom_report(

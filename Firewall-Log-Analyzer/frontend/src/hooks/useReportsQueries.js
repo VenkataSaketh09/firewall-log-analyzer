@@ -14,10 +14,10 @@ import { formatDateForAPI } from '../utils/dateUtils';
 /**
  * Hook to fetch daily report
  */
-export const useDailyReport = (date) => {
+export const useDailyReport = (date, options = {}) => {
   return useQuery({
-    queryKey: ['reports', 'daily', date],
-    queryFn: () => getDailyReport(date),
+    queryKey: ['reports', 'daily', date, options],
+    queryFn: () => getDailyReport(date, options),
     enabled: !!date, // Only fetch if date is provided
     staleTime: 5 * 60 * 1000, // 5 minutes - reports don't change often
   });
@@ -26,10 +26,10 @@ export const useDailyReport = (date) => {
 /**
  * Hook to fetch weekly report
  */
-export const useWeeklyReport = (weekStart) => {
+export const useWeeklyReport = (weekStart, options = {}) => {
   return useQuery({
-    queryKey: ['reports', 'weekly', weekStart],
-    queryFn: () => getWeeklyReport(weekStart),
+    queryKey: ['reports', 'weekly', weekStart, options],
+    queryFn: () => getWeeklyReport(weekStart, options),
     enabled: !!weekStart, // Only fetch if weekStart is provided
     staleTime: 5 * 60 * 1000, // 5 minutes
   });

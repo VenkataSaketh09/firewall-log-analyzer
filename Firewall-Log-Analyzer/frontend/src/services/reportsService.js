@@ -3,8 +3,8 @@ import api from './api';
 /**
  * Get daily report
  */
-export const getDailyReport = async (date = null) => {
-  const params = {};
+export const getDailyReport = async (date = null, options = {}) => {
+  const params = { ...options };
   if (date) params.date = date;
 
   const response = await api.get('/api/reports/daily', { params });
@@ -14,8 +14,8 @@ export const getDailyReport = async (date = null) => {
 /**
  * Get weekly report
  */
-export const getWeeklyReport = async (weekStart = null) => {
-  const params = {};
+export const getWeeklyReport = async (weekStart = null, options = {}) => {
+  const params = { ...options };
   // Backend expects query param: start_date (YYYY-MM-DD)
   if (weekStart) params.start_date = weekStart;
 

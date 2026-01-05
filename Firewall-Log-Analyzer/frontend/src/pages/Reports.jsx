@@ -25,6 +25,7 @@ const Reports = () => {
     include_logs: false,
   });
   const [shouldFetch, setShouldFetch] = useState(false);
+  const [loadedReport, setLoadedReport] = useState(null); // Store loaded report from history
 
   const reportTypes = [
     { id: 'daily', label: 'Daily Report' },
@@ -32,18 +33,27 @@ const Reports = () => {
     { id: 'custom', label: 'Custom Report' },
   ];
 
+  // Options object for all report types
+  const reportOptions = {
+    include_charts: config.include_charts,
+    include_summary: config.include_summary,
+    include_threats: config.include_threats,
+    include_logs: config.include_logs,
+  };
+
   // React Query hooks - only enabled when shouldFetch is true
-  const dailyReportQuery = useDailyReport(shouldFetch && reportType === 'daily' ? config.date : null);
-  const weeklyReportQuery = useWeeklyReport(shouldFetch && reportType === 'weekly' ? config.week_start : null);
+  const dailyReportQuery = useDailyReport(
+    shouldFetch && reportType === 'daily' ? config.date : null,
+    shouldFetch && reportType === 'daily' ? reportOptions : {}
+  );
+  const weeklyReportQuery = useWeeklyReport(
+    shouldFetch && reportType === 'weekly' ? config.week_start : null,
+    shouldFetch && reportType === 'weekly' ? reportOptions : {}
+  );
   const customReportQuery = useCustomReport(
     shouldFetch && reportType === 'custom' && config.start_date && config.end_date ? config.start_date : null,
     shouldFetch && reportType === 'custom' && config.start_date && config.end_date ? config.end_date : null,
-    shouldFetch && reportType === 'custom' ? {
-      include_charts: config.include_charts,
-      include_summary: config.include_summary,
-      include_threats: config.include_threats,
-      include_logs: config.include_logs,
-    } : {}
+    shouldFetch && reportType === 'custom' ? reportOptions : {}
   );
 
   const mlStatusQuery = useMLStatus();
@@ -57,7 +67,9 @@ const Reports = () => {
     ? weeklyReportQuery 
     : customReportQuery;
 
-  const report = activeQuery?.data?.report || activeQuery?.data || null;
+  // Use loaded report if available, otherwise use query data
+  const queryReport = activeQuery?.data?.report || activeQuery?.data || null;
+  const report = loadedReport || queryReport;
   const loading = activeQuery?.isLoading || false;
   const error = activeQuery?.isError 
     ? (activeQuery.error?.response?.data?.detail || activeQuery.error?.userMessage || activeQuery.error?.message || 'Failed to generate report')
@@ -68,6 +80,7 @@ const Reports = () => {
     if (reportType === 'custom' && (!config.start_date || !config.end_date)) {
       return;
     }
+    setLoadedReport(null); // Clear loaded report when generating new one
     setShouldFetch(true);
   };
 
@@ -142,13 +155,11 @@ const Reports = () => {
     }
   };
 
-  const handleLoadReport = (loadedReport) => {
-    // For loaded reports, we'll set shouldFetch to false and manually set the report
-    // This is a workaround since React Query expects to fetch the data
-    // In a production app, you might want to use queryClient.setQueryData instead
+  const handleLoadReport = (loadedReportData) => {
+    // Set the loaded report to display in preview
+    setLoadedReport(loadedReportData);
     setShouldFetch(false);
-    // Note: This won't work perfectly with React Query's cache system
-    // Consider using queryClient.setQueryData for better integration
+    // Scroll to top to show the preview
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
