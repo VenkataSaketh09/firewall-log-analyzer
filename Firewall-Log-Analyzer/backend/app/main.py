@@ -107,6 +107,20 @@ async def startup_event():
     alert_monitor_worker.start()
     print("✓ Alert monitor worker started")
     
+    # Initialize auto IP blocking service (logs its own status)
+    from app.services.auto_ip_blocking_service import auto_ip_blocking_service
+    if auto_ip_blocking_service.enabled:
+        print(f"✓ Auto IP blocking service enabled")
+        print(f"  - Severity thresholds: CRITICAL={auto_ip_blocking_service.auto_block_critical}, "
+              f"HIGH={auto_ip_blocking_service.auto_block_high}, "
+              f"MEDIUM={auto_ip_blocking_service.auto_block_medium}, "
+              f"LOW={auto_ip_blocking_service.auto_block_low}")
+        print(f"  - Attack thresholds: BruteForce={auto_ip_blocking_service.brute_force_attempt_threshold}, "
+              f"DDoS={auto_ip_blocking_service.ddos_request_threshold}, "
+              f"PortScan={auto_ip_blocking_service.port_scan_ports_threshold}")
+    else:
+        print("! Auto IP blocking service disabled")
+    
     print("✓ FastAPI application started successfully")
 
 
@@ -171,6 +185,55 @@ def notification_health_check():
     }
 
 
+@app.get("/health/auto-blocking")
+def auto_blocking_health_check():
+    """Check auto IP blocking service status"""
+    from app.services.auto_ip_blocking_service import auto_ip_blocking_service
+    from app.db.mongo import blacklisted_ips_collection
+    from datetime import datetime, timedelta
+    
+    # Get recent auto-blocked IPs count
+    recent_cutoff = datetime.utcnow() - timedelta(hours=24)
+    recent_auto_blocks = blacklisted_ips_collection.count_documents({
+        "blocked_by": "auto_blocking_service",
+        "blocked_at": {"$gte": recent_cutoff}
+    })
+    
+    # Get total active auto-blocks
+    active_auto_blocks = blacklisted_ips_collection.count_documents({
+        "blocked_by": "auto_blocking_service",
+        "is_active": True
+    })
+    
+    return {
+        "auto_blocking_service": {
+            "enabled": auto_ip_blocking_service.enabled,
+            "severity_thresholds": {
+                "critical": auto_ip_blocking_service.auto_block_critical,
+                "high": auto_ip_blocking_service.auto_block_high,
+                "medium": auto_ip_blocking_service.auto_block_medium,
+                "low": auto_ip_blocking_service.auto_block_low,
+            },
+            "attack_thresholds": {
+                "brute_force": auto_ip_blocking_service.brute_force_attempt_threshold,
+                "ddos": auto_ip_blocking_service.ddos_request_threshold,
+                "port_scan": auto_ip_blocking_service.port_scan_ports_threshold,
+            },
+            "ml_thresholds": {
+                "risk_score": auto_ip_blocking_service.ml_risk_score_threshold,
+                "anomaly_score": auto_ip_blocking_service.ml_anomaly_score_threshold,
+                "confidence": auto_ip_blocking_service.ml_confidence_threshold,
+                "require_ml_confirmation": auto_ip_blocking_service.require_ml_confirmation,
+            },
+            "cooldown_hours": auto_ip_blocking_service.cooldown_hours,
+        },
+        "statistics": {
+            "active_auto_blocks": active_auto_blocks,
+            "recent_auto_blocks_24h": recent_auto_blocks,
+        }
+    }
+
+
 @app.post("/test/email")
 def test_email_notification():
     """Test email notification (for debugging)"""
@@ -218,6 +281,132 @@ def test_email_notification():
             "error": str(e),
             "traceback": traceback.format_exc(),
             "recipients": email_service.recipients,
+        }
+
+
+@app.post("/test/alert-notification")
+def test_alert_notification():
+    """Test alert notification system (simulates threat detection)"""
+    from app.services.alert_notification_service import alert_notification_service
+    from datetime import datetime, timezone
+    
+    # Create a test alert that would trigger notification
+    test_alert = {
+        "alert_type": "BRUTE_FORCE",
+        "severity": "HIGH",
+        "source_ip": "192.168.1.200",
+        "description": "TEST: Simulated brute force attack detected for testing email notifications",
+        "count": 25,
+        "first_seen": datetime.now(timezone.utc),
+        "last_seen": datetime.now(timezone.utc),
+        "bucket_end": datetime.now(timezone.utc),
+    }
+    
+    try:
+        result = alert_notification_service.process_alert_with_ml(test_alert)
+        
+        return {
+            "success": result.get("sent", False),
+            "message": "Alert notification test completed",
+            "result": result,
+            "alert": test_alert,
+        }
+    except Exception as e:
+        import traceback
+        return {
+            "success": False,
+            "message": f"Error testing alert notification: {str(e)}",
+            "error": str(e),
+            "traceback": traceback.format_exc(),
+        }
+
+
+@app.post("/test/auto-block")
+def test_auto_block_with_notification():
+    """Test auto-blocking with email notification (simulates automatic IP blocking)"""
+    from app.services.auto_ip_blocking_service import auto_ip_blocking_service
+    from app.services.ip_blocking_service import IPBlockingService
+    from datetime import datetime, timezone
+    import random
+    
+    # Generate a test IP that's unlikely to conflict
+    test_ip = f"192.168.{random.randint(200, 254)}.{random.randint(1, 254)}"
+    
+    # Check if IP is already blocked
+    if IPBlockingService.is_blocked(test_ip):
+        return {
+            "success": False,
+            "message": f"Test IP {test_ip} is already blocked. Please unblock it first or use a different IP.",
+            "ip_address": test_ip,
+        }
+    
+    try:
+        # Simulate auto-blocking with notification
+        block_result = auto_ip_blocking_service.auto_block_ip(
+            source_ip=test_ip,
+            threat_type="BRUTE_FORCE",
+            severity="HIGH",
+            reason="TEST: Simulated brute force attack for testing auto-blocking and email notifications",
+            ml_risk_score=85.0,
+            ml_anomaly_score=0.95,
+            ml_confidence=0.90,
+            attack_metrics={
+                "total_attempts": 25,
+                "unique_usernames_attempted": 5,
+                "first_attempt": datetime.now(timezone.utc),
+                "last_attempt": datetime.now(timezone.utc),
+            }
+        )
+        
+        # Verify IP is blocked
+        is_blocked = IPBlockingService.is_blocked(test_ip)
+        
+        return {
+            "success": block_result.get("success", False),
+            "message": "Auto-blocking test completed",
+            "ip_address": test_ip,
+            "block_result": block_result,
+            "is_blocked_verified": is_blocked,
+            "email_sent": block_result.get("email_sent", False),
+            "note": f"IP {test_ip} has been blocked for testing. You can unblock it via /api/ip-blocking/unblock endpoint.",
+        }
+    except Exception as e:
+        import traceback
+        return {
+            "success": False,
+            "message": f"Error testing auto-blocking: {str(e)}",
+            "error": str(e),
+            "traceback": traceback.format_exc(),
+            "ip_address": test_ip,
+        }
+
+
+@app.post("/test/auto-block-cleanup/{ip_address}")
+def test_auto_block_cleanup(ip_address: str):
+    """Unblock a test IP address (cleanup after testing)"""
+    from app.services.ip_blocking_service import IPBlockingService
+    
+    try:
+        if not IPBlockingService.is_blocked(ip_address):
+            return {
+                "success": False,
+                "message": f"IP {ip_address} is not currently blocked",
+            }
+        
+        result = IPBlockingService.unblock_ip(ip_address, unblocked_by="test_cleanup")
+        
+        return {
+            "success": result.get("success", False),
+            "message": f"IP {ip_address} unblocked successfully",
+            "result": result,
+        }
+    except Exception as e:
+        import traceback
+        return {
+            "success": False,
+            "message": f"Error unblocking IP: {str(e)}",
+            "error": str(e),
+            "traceback": traceback.format_exc(),
         }
 
 
