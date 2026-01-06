@@ -18,5 +18,3 @@ dist/
 # Python
 *.pyc
 
-# Reports / exports
-reports/
