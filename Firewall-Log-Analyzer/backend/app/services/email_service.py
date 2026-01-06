@@ -151,6 +151,8 @@ class EmailService:
     
     def _generate_subject(self, alert_type: str, severity: str, source_ip: str) -> str:
         """Generate email subject line"""
+        if alert_type.startswith("AUTO_BLOCKED_"):
+            return f"[AUTO-BLOCKED] IP {source_ip} has been automatically blocked - {severity} threat detected"
         return f"[ALERT] {severity} {alert_type} detected from {source_ip}"
     
     def _generate_html_email(

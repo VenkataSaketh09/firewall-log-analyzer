@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { FiRefreshCw, FiX, FiShield, FiShieldOff, FiAlertCircle, FiCheckCircle, FiClock } from 'react-icons/fi';
+import { FiRefreshCw, FiX, FiShield, FiShieldOff, FiAlertCircle, FiCheckCircle, FiClock, FiZap } from 'react-icons/fi';
 import { useBlockedIPs, useBlockIP, useUnblockIP } from '../hooks/useIPBlockingQueries';
 import dayjs from 'dayjs';
 
@@ -11,12 +11,14 @@ const IPBlocking = () => {
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
 
-  const { data: blockedIPsData, isLoading, refetch } = useBlockedIPs(activeOnly);
+  // Always fetch active blocks only (unblocked IPs should not appear)
+  const { data: blockedIPsData, isLoading, refetch } = useBlockedIPs(true);
   const blockMutation = useBlockIP();
   const unblockMutation = useUnblockIP();
 
-  const blockedIPs = blockedIPsData?.blocked_ips || [];
-  const total = blockedIPsData?.total || 0;
+  // Filter to only show active blocks (exclude unblocked IPs)
+  const blockedIPs = (blockedIPsData?.blocked_ips || []).filter(ip => ip.is_active);
+  const totalActiveCount = blockedIPs.length;
 
   const handleBlockIP = async (e) => {
     e.preventDefault();
@@ -213,7 +215,7 @@ const IPBlocking = () => {
                   : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
               }`}
             >
-              Active Blocks ({blockedIPs.filter(ip => ip.is_active).length})
+              Active Blocks ({totalActiveCount})
             </button>
             <button
               onClick={() => setActiveOnly(false)}
@@ -223,7 +225,7 @@ const IPBlocking = () => {
                   : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
               }`}
             >
-              All Blocks ({total})
+              All Blocks ({totalActiveCount})
             </button>
           </nav>
         </div>
@@ -252,6 +254,9 @@ const IPBlocking = () => {
                     Status
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Type
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Reason
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -269,7 +274,9 @@ const IPBlocking = () => {
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {blockedIPs.map((ip, index) => (
+                {blockedIPs.map((ip, index) => {
+                  const isAutoBlocked = ip.blocked_by === 'auto_blocking_service' || (ip.reason && ip.reason.includes('AUTO-BLOCK'));
+                  return (
                   <tr key={ip.ip_address || index} className="hover:bg-gray-50">
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="text-sm font-medium text-gray-900">{ip.ip_address}</div>
@@ -287,8 +294,33 @@ const IPBlocking = () => {
                         </span>
                       )}
                     </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      {isAutoBlocked ? (
+                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800" title="Automatically blocked by threat detection system">
+                          <FiZap className="w-3 h-3 mr-1" />
+                          Auto-Blocked
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                          <FiShield className="w-3 h-3 mr-1" />
+                          Manual
+                        </span>
+                      )}
+                    </td>
                     <td className="px-6 py-4">
-                      <div className="text-sm text-gray-500">{ip.reason || 'N/A'}</div>
+                      <div className="text-sm text-gray-500">
+                        {ip.reason ? (
+                          isAutoBlocked ? (
+                            <span title={ip.reason}>
+                              {ip.reason.replace('AUTO-BLOCK: ', '')}
+                            </span>
+                          ) : (
+                            ip.reason
+                          )
+                        ) : (
+                          'N/A'
+                        )}
+                      </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="text-sm text-gray-500 flex items-center gap-1">
@@ -317,7 +349,8 @@ const IPBlocking = () => {
                       )}
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>
