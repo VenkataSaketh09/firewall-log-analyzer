@@ -8,6 +8,7 @@ import {
   useSaveReport,
 } from '../hooks/useReportsQueries';
 import { useMLStatus } from '../hooks/useDashboardQueries';
+import { formatDateForAPI } from '../utils/dateUtils';
 import ReportConfigPanel from '../components/reports/ReportConfigPanel';
 import ReportPreview from '../components/reports/ReportPreview';
 import ReportHistory from '../components/reports/ReportHistory';

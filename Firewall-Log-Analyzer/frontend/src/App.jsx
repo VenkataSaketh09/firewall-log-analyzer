@@ -5,6 +5,7 @@ import Dashboard from './pages/Dashboard';
 import Logs from './pages/Logs';
 import Threats from './pages/Threats';
 import Reports from './pages/Reports';
+import IPBlocking from './pages/IPBlocking';
 import './App.css';
 
 function App() {
@@ -17,6 +18,7 @@ function App() {
           <Route path="/logs" element={<Logs />} />
           <Route path="/threats" element={<Threats />} />
           <Route path="/reports" element={<Reports />} />
+          <Route path="/ip-blocking" element={<IPBlocking />} />
         </Routes>
       </Layout>
     </Router>

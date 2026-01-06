@@ -275,12 +275,35 @@ The system detects and classifies the following security threats:
 - `GET /api/ml/status` - Get ML service status
 - `POST /api/ml/retrain` - Trigger model retraining
 
-#### 9. **WebSocket APIs**
-- `WS /ws/logs/live` - Live log streaming endpoint
-  - Subscribe to specific log sources: `all`, `auth.log`, `ufw.log`, `iptables`, `syslog`, `sql.log`
-  - Real-time log delivery with Redis caching
+#### 9. **IP Blocking APIs**
+- `POST /api/ip-blocking/block` - Block an IP address (requires API key)
+- `POST /api/ip-blocking/unblock` - Unblock an IP address (requires API key)
+- `GET /api/ip-blocking/list` - Get list of blocked IPs (active or all)
+- `GET /api/ip-blocking/check/{ip_address}` - Check if an IP is currently blocked
+- **Features**:
+  - UFW firewall integration for actual IP blocking
+  - Manual and automatic blocking support
+  - Blocking history tracking
+  - Reason tracking for each block
 
-#### 10. **Export APIs**
+#### 10. **Redis Cache APIs**
+- `GET /api/logs/cache/{log_source}` - Get cached logs for a specific source
+- `GET /api/logs/cache/stats` - Get Redis cache statistics
+- `DELETE /api/logs/cache?log_source={source}` - Clear cache for a source or all sources
+- **Features**:
+  - Per-source log caching (auth, ufw, kern, syslog, messages, all)
+  - Maximum 5,000 logs per source
+  - 1-hour TTL (Time To Live)
+  - Instant log retrieval for source switching
+
+#### 11. **WebSocket APIs**
+- `WS /ws/logs/live` - Live log streaming endpoint
+  - Subscribe to specific log sources: `all`, `auth`, `ufw`, `kern`, `syslog`, `messages`
+  - Real-time log delivery with Redis caching
+  - Connection management and subscription handling
+  - Supports multiple concurrent connections
+
+#### 12. **Export APIs**
 - `GET /api/export/logs/csv` - Export logs as CSV
 - `GET /api/export/logs/json` - Export logs as JSON
 - `GET /api/export/logs/pdf` - Export logs as PDF
@@ -321,24 +344,70 @@ The backend supports parsing logs from multiple sources:
 - Continuously monitors for new threats
 - Creates alerts for high-severity threats
 - Triggers email notifications
+- Rate limiting to prevent notification spam
 
 #### 2. **ML Auto-Retrain Worker**
 - Periodically retrains ML models with new data
 - Improves model accuracy over time
 - Runs on configurable schedule
+- Background processing for model updates
 
 #### 3. **Retention Service**
 - Manages log data retention policies
 - Archives old logs
 - Cleans up expired data
+- Automatic size monitoring and cleanup
+
+#### 4. **Auto IP Blocking Service**
+- Automatically blocks malicious IPs based on threat detection
+- **Rules-Based Blocking**:
+  - Configurable severity thresholds (CRITICAL, HIGH, MEDIUM, LOW)
+  - Attack-specific thresholds (brute force attempts, DDoS requests, port scans)
+  - Per-severity enable/disable options
+- **ML-Enhanced Blocking**:
+  - Risk score threshold (default: 75.0)
+  - Anomaly score threshold (default: 0.7)
+  - Confidence threshold (default: 0.7)
+  - Optional ML confirmation requirement
+- **Features**:
+  - Cooldown period to prevent re-blocking recently unblocked IPs
+  - Email notifications on auto-block
+  - Integration with UFW firewall for actual blocking
+  - Configurable via environment variables
 
 ### Notification Services
 
 #### Email Notifications
 - **SendGrid Integration**: Sends email alerts for critical threats
-- **Recipients**: Configurable list of email addresses
+- **Recipients**: Configurable list of email addresses (comma-separated)
 - **Rate Limiting**: Prevents email spam (60-minute cooldown per alert type)
-- **Alert Types**: Brute force, DDoS, port scans, high-severity threats
+- **Alert Types**: Brute force, DDoS, port scans, high-severity threats, auto-blocking events
+- **Email Content**:
+  - HTML-formatted emails with threat details
+  - ML analysis results (risk score, anomaly score, confidence)
+  - Attack statistics and timelines
+  - IP reputation information
+  - Actionable recommendations
+- **Configuration**: Environment variables for API key, sender, recipients
+
+### IP Blocking Services
+
+#### 1. **IP Blocking Service**
+- **Manual Blocking**: Block IPs via API or frontend
+- **UFW Integration**: Actual firewall rule management using UFW commands
+- **Database Tracking**: Stores blocking history in MongoDB
+- **Features**:
+  - Block/unblock IP addresses
+  - Track blocking reason and timestamp
+  - Track who blocked/unblocked (user or auto-blocking service)
+  - Check IP blocking status
+  - List all blocked IPs (active or historical)
+
+#### 2. **Auto IP Blocking Service**
+- **Automatic Threat Response**: Blocks IPs when threats are detected
+- **Hybrid Approach**: Combines rules-based and ML-based decisions
+- **Configurable Thresholds**: Environment variable configuration
+- **Integration**: Works with all threat detection services (brute force, DDoS, port scan)
 
 ---
 
@@ -428,6 +497,29 @@ The backend supports parsing logs from multiple sources:
   - Log statistics
   - Charts and visualizations
   - Recommendations
+
+#### 5. **IP Blocking Page** (`/ip-blocking`)
+**Features**:
+- **Blocked IPs Table**: 
+  - View all blocked IPs (active and historical)
+  - Filter by active status
+  - Display blocking details (IP, status, type, reason, timestamps)
+- **Block IP Form**: 
+  - Manual IP blocking interface
+  - IP address validation
+  - Optional reason field
+- **Unblock Functionality**: 
+  - Unblock active IPs
+  - Confirmation dialogs
+- **Status Indicators**:
+  - Active/Inactive blocking status
+  - Auto-blocked vs Manual blocking badges
+  - Visual status indicators
+- **Features**:
+  - Real-time refresh
+  - Responsive table design
+  - Detailed blocking information display
+  - Auto-blocked IP identification
 
 ### Reusable Components
 
@@ -591,9 +683,12 @@ If ML models are unavailable:
 
 ### 2. **Real-Time Monitoring**
 - WebSocket-based live log streaming
-- Source-specific subscriptions
-- Redis caching for instant log retrieval
+- Source-specific subscriptions (auth, ufw, kern, syslog, messages, all)
+- Redis caching for instant log retrieval when switching sources
 - Connection status monitoring
+- Raw log viewer with terminal-style display
+- Auto-scroll functionality
+- Multiple concurrent WebSocket connections support
 
 ### 3. **Advanced Threat Detection**
 - Rule-based detection algorithms
@@ -610,8 +705,19 @@ If ML models are unavailable:
 ### 5. **Automated Alerting**
 - Email notifications via SendGrid
 - Configurable alert thresholds
-- Rate limiting to prevent spam
+- Rate limiting to prevent spam (60-minute cooldown)
 - Alert acknowledgment and resolution
+- HTML-formatted email alerts with detailed threat information
+- ML analysis results in email notifications
+
+### 11. **IP Blocking & Firewall Management**
+- Manual IP blocking/unblocking via API and frontend
+- Automatic IP blocking based on threat detection
+- UFW firewall integration for actual network blocking
+- Blocking history and tracking
+- Configurable auto-blocking thresholds (rules-based and ML-based)
+- Email notifications on auto-block events
+- Cooldown periods to prevent re-blocking
 
 ### 6. **Comprehensive Reporting**
 - Daily, weekly, and custom reports
@@ -651,11 +757,12 @@ If ML models are unavailable:
 ### Backend
 - **Framework**: FastAPI (Python 3.8+)
 - **Database**: MongoDB Atlas
-- **Cache**: Redis
-- **ML Libraries**: scikit-learn, pandas, numpy
+- **Cache**: Redis 5.0.1 (optional, with in-memory fallback)
+- **ML Libraries**: scikit-learn, pandas, numpy, joblib, imbalanced-learn
 - **Email Service**: SendGrid API
 - **IP Reputation**: VirusTotal API
 - **WebSocket**: FastAPI WebSocket support
+- **Firewall Integration**: UFW (Uncomplicated Firewall) for IP blocking
 
 ### Frontend
 - **Framework**: React 19.2.0
@@ -707,6 +814,14 @@ The system successfully detects and classifies **6 main threat types**:
 - **NORMAL**: Legitimate traffic
 
 With **47 ML features** extracted from logs, the system provides accurate threat classification with confidence scores, enabling security teams to prioritize and respond to threats effectively.
+
+### Additional Capabilities
+
+- **IP Blocking**: Automatic and manual IP blocking with UFW firewall integration
+- **Redis Caching**: High-performance caching for real-time log retrieval (5,000 logs per source, 1-hour TTL)
+- **WebSocket Streaming**: Real-time log delivery to multiple concurrent clients
+- **Email Alerts**: HTML-formatted email notifications with detailed threat analysis
+- **Auto-Blocking**: ML-enhanced automatic IP blocking based on threat severity and ML scores
 
 ---
 

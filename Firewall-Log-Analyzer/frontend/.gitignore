@@ -1,5 +1,7 @@
 # Logs
 *.log
+# Exception: Don't ignore the components/logs directory
+!src/components/logs/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*

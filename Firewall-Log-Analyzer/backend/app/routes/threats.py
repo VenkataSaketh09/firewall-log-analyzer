@@ -11,6 +11,7 @@ from app.services.brute_force_detection import detect_brute_force, get_brute_for
 from app.services.ddos_detection import detect_ddos
 from app.services.port_scan_detection import detect_port_scan
 from app.services.virustotal_service import get_multiple_ip_reputations, enhance_severity_with_reputation
+from app.services.auto_ip_blocking_service import auto_ip_blocking_service
 from app.schemas.threat_schema import (
     BruteForceDetectionsResponse,
     BruteForceDetection,
@@ -210,6 +211,50 @@ def get_brute_force_detections(
                     model.ml_confidence = fallback_conf
 
             detection_models.append(model)
+            
+            # Auto-blocking: Check if IP should be automatically blocked
+            try:
+                should_block, block_reason = auto_ip_blocking_service.should_auto_block(
+                    threat_type="BRUTE_FORCE",
+                    severity=model.severity,
+                    source_ip=detected_ip,
+                    ml_risk_score=model.ml_risk_score,
+                    ml_anomaly_score=model.ml_anomaly_score,
+                    ml_confidence=model.ml_confidence,
+                    ml_predicted_label=model.ml_predicted_label,
+                    attack_metrics={
+                        "total_attempts": model.total_attempts,
+                        "unique_usernames_attempted": model.unique_usernames_attempted,
+                        "first_attempt": model.first_attempt,
+                        "last_attempt": model.last_attempt,
+                        "attack_windows_count": len(model.attack_windows)
+                    }
+                )
+                
+                if should_block:
+                    block_result = auto_ip_blocking_service.auto_block_ip(
+                        source_ip=detected_ip,
+                        threat_type="BRUTE_FORCE",
+                        severity=model.severity,
+                        reason=block_reason,
+                        ml_risk_score=model.ml_risk_score,
+                        ml_anomaly_score=model.ml_anomaly_score,
+                        ml_confidence=model.ml_confidence,
+                        attack_metrics={
+                            "total_attempts": model.total_attempts,
+                            "unique_usernames_attempted": model.unique_usernames_attempted,
+                            "first_attempt": model.first_attempt.isoformat() if model.first_attempt else None,
+                            "last_attempt": model.last_attempt.isoformat() if model.last_attempt else None
+                        }
+                    )
+                    if block_result.get("success"):
+                        # Add auto-blocked flag to the model (if schema supports it)
+                        if hasattr(model, 'auto_blocked'):
+                            model.auto_blocked = True
+            except Exception as auto_block_error:
+                # Don't fail the entire request if auto-blocking fails
+                import logging
+                logging.getLogger(__name__).error(f"Error in auto-blocking for {detected_ip}: {auto_block_error}")
         
         # Determine time range for response
         if end_date is None:
@@ -363,6 +408,47 @@ def detect_brute_force_post(
                     model.ml_reasoning.append(f"severity_downgraded_to={model.severity}")
 
             detection_models.append(model)
+            
+            # Auto-blocking: Check if IP should be automatically blocked
+            try:
+                should_block, block_reason = auto_ip_blocking_service.should_auto_block(
+                    threat_type="BRUTE_FORCE",
+                    severity=model.severity,
+                    source_ip=detected_ip,
+                    ml_risk_score=model.ml_risk_score,
+                    ml_anomaly_score=model.ml_anomaly_score,
+                    ml_confidence=model.ml_confidence,
+                    ml_predicted_label=model.ml_predicted_label,
+                    attack_metrics={
+                        "total_attempts": model.total_attempts,
+                        "unique_usernames_attempted": model.unique_usernames_attempted,
+                        "first_attempt": model.first_attempt,
+                        "last_attempt": model.last_attempt,
+                        "attack_windows_count": len(model.attack_windows)
+                    }
+                )
+                
+                if should_block:
+                    block_result = auto_ip_blocking_service.auto_block_ip(
+                        source_ip=detected_ip,
+                        threat_type="BRUTE_FORCE",
+                        severity=model.severity,
+                        reason=block_reason,
+                        ml_risk_score=model.ml_risk_score,
+                        ml_anomaly_score=model.ml_anomaly_score,
+                        ml_confidence=model.ml_confidence,
+                        attack_metrics={
+                            "total_attempts": model.total_attempts,
+                            "unique_usernames_attempted": model.unique_usernames_attempted,
+                            "first_attempt": model.first_attempt.isoformat() if model.first_attempt else None,
+                            "last_attempt": model.last_attempt.isoformat() if model.last_attempt else None
+                        }
+                    )
+                    if block_result.get("success") and hasattr(model, 'auto_blocked'):
+                        model.auto_blocked = True
+            except Exception as auto_block_error:
+                import logging
+                logging.getLogger(__name__).error(f"Error in auto-blocking for {detected_ip}: {auto_block_error}")
         
         # Determine time range for response
         end_date = config.end_date if config.end_date else datetime.now(timezone.utc)
@@ -546,6 +632,57 @@ def get_ddos_detections(
                     model.ml_confidence = fallback_conf
 
             detection_models.append(model)
+            
+            # Auto-blocking: For DDoS, block each source IP individually
+            try:
+                source_ips_to_check = model.source_ips[:20]  # Limit to top 20 IPs to avoid blocking too many
+                for source_ip in source_ips_to_check:
+                    if not source_ip:
+                        continue
+                    
+                    should_block, block_reason = auto_ip_blocking_service.should_auto_block(
+                        threat_type="DDOS",
+                        severity=model.severity,
+                        source_ip=source_ip,
+                        ml_risk_score=model.ml_risk_score,
+                        ml_anomaly_score=model.ml_anomaly_score,
+                        ml_confidence=model.ml_confidence,
+                        ml_predicted_label=model.ml_predicted_label,
+                        attack_metrics={
+                            "attack_type": model.attack_type,
+                            "total_requests": model.total_requests,
+                            "peak_request_rate": model.peak_request_rate,
+                            "source_ip_count": model.source_ip_count,
+                            "first_request": model.first_request,
+                            "last_request": model.last_request
+                        }
+                    )
+                    
+                    if should_block:
+                        block_result = auto_ip_blocking_service.auto_block_ip(
+                            source_ip=source_ip,
+                            threat_type="DDOS",
+                            severity=model.severity,
+                            reason=f"{block_reason} (DDoS {model.attack_type})",
+                            ml_risk_score=model.ml_risk_score,
+                            ml_anomaly_score=model.ml_anomaly_score,
+                            ml_confidence=model.ml_confidence,
+                            attack_metrics={
+                                "attack_type": model.attack_type,
+                                "total_requests": model.total_requests,
+                                "peak_request_rate": model.peak_request_rate,
+                                "source_ip_count": model.source_ip_count,
+                                "first_request": model.first_request.isoformat() if model.first_request else None,
+                                "last_request": model.last_request.isoformat() if model.last_request else None
+                            }
+                        )
+                        if block_result.get("success") and hasattr(model, 'auto_blocked_ips'):
+                            if not hasattr(model, 'auto_blocked_ips'):
+                                model.auto_blocked_ips = []
+                            model.auto_blocked_ips.append(source_ip)
+            except Exception as auto_block_error:
+                import logging
+                logging.getLogger(__name__).error(f"Error in auto-blocking DDoS IPs: {auto_block_error}")
         
         # Determine time range for response
         if end_date is None:
@@ -720,6 +857,47 @@ def get_port_scan_detections(
                     model.ml_confidence = fallback_conf
 
             detection_models.append(model)
+            
+            # Auto-blocking: Check if IP should be automatically blocked
+            try:
+                should_block, block_reason = auto_ip_blocking_service.should_auto_block(
+                    threat_type="PORT_SCAN",
+                    severity=model.severity,
+                    source_ip=detected_ip,
+                    ml_risk_score=model.ml_risk_score,
+                    ml_anomaly_score=model.ml_anomaly_score,
+                    ml_confidence=model.ml_confidence,
+                    ml_predicted_label=model.ml_predicted_label,
+                    attack_metrics={
+                        "total_attempts": model.total_attempts,
+                        "unique_ports_attempted": model.unique_ports_attempted,
+                        "first_attempt": model.first_attempt,
+                        "last_attempt": model.last_attempt,
+                        "attack_windows_count": len(model.attack_windows)
+                    }
+                )
+                
+                if should_block:
+                    block_result = auto_ip_blocking_service.auto_block_ip(
+                        source_ip=detected_ip,
+                        threat_type="PORT_SCAN",
+                        severity=model.severity,
+                        reason=block_reason,
+                        ml_risk_score=model.ml_risk_score,
+                        ml_anomaly_score=model.ml_anomaly_score,
+                        ml_confidence=model.ml_confidence,
+                        attack_metrics={
+                            "total_attempts": model.total_attempts,
+                            "unique_ports_attempted": model.unique_ports_attempted,
+                            "first_attempt": model.first_attempt.isoformat() if model.first_attempt else None,
+                            "last_attempt": model.last_attempt.isoformat() if model.last_attempt else None
+                        }
+                    )
+                    if block_result.get("success") and hasattr(model, 'auto_blocked'):
+                        model.auto_blocked = True
+            except Exception as auto_block_error:
+                import logging
+                logging.getLogger(__name__).error(f"Error in auto-blocking for {detected_ip}: {auto_block_error}")
 
         # Determine time range for response
         if end_date is None:

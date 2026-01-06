@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { FiLayout, FiFileText, FiAlertTriangle, FiBarChart2, FiMenu, FiX } from 'react-icons/fi';
+import { FiLayout, FiFileText, FiAlertTriangle, FiBarChart2, FiShield, FiMenu, FiX } from 'react-icons/fi';
 
 const Navigation = () => {
   const location = useLocation();
@@ -11,6 +11,7 @@ const Navigation = () => {
     { path: '/logs', label: 'Logs', icon: FiFileText },
     { path: '/threats', label: 'Threats', icon: FiAlertTriangle },
     { path: '/reports', label: 'Reports', icon: FiBarChart2 },
+    { path: '/ip-blocking', label: 'IP Blocking', icon: FiShield },
   ];
 
   const isActive = (path) => {
