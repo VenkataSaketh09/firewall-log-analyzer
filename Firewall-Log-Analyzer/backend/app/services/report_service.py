@@ -68,8 +68,14 @@ def generate_weekly_report(
     if start_date is None:
         start_date = (datetime.utcnow() - timedelta(days=7)).replace(hour=0, minute=0, second=0, microsecond=0)
     else:
-        start_date = start_date.replace(hour=0, minute=0, second=0, microsecond=0)
+        # Ensure start_date is a datetime object and set to beginning of day
+        if isinstance(start_date, datetime):
+            start_date = start_date.replace(hour=0, minute=0, second=0, microsecond=0)
+        else:
+            # If it's a string or other type, convert it
+            start_date = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=7)
     
+    # End date: use current time (not end of day) to avoid including future timestamps
     end_date = datetime.utcnow()
     
     return _generate_report(

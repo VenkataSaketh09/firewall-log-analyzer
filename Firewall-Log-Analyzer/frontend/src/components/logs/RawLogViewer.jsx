@@ -40,6 +40,15 @@ const RawLogViewer = ({ logs, activeLogSource, connectionStatus, onClear }) => {
   const scrollTimeoutRef = useRef(null);
   const previousLogSourceRef = useRef(activeLogSource);
 
+  // Handle clear - clear both WebSocket logs and cached logs
+  const handleClear = useCallback(() => {
+    setCachedLogs([]);
+    lastLogCountRef.current = 0; // Reset scroll counter
+    if (onClear) {
+      onClear();
+    }
+  }, [onClear]);
+
   // Fetch cached logs from Redis when source changes
   useEffect(() => {
     if (activeLogSource && activeLogSource !== previousLogSourceRef.current) {
@@ -177,7 +186,7 @@ const RawLogViewer = ({ logs, activeLogSource, connectionStatus, onClear }) => {
           </button>
           {/* Clear logs */}
           <button
-            onClick={onClear}
+            onClick={handleClear}
             className="p-2 rounded-md bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors"
             title="Clear logs"
           >

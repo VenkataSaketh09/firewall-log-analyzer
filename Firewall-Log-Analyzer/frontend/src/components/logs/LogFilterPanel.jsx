@@ -179,7 +179,7 @@ const LogFilterPanel = ({ filters, onFilterChange, onReset }) => {
             type="number"
             placeholder="e.g., 80, 443"
             value={filters.port || ''}
-            onChange={(e) => onFilterChange('port', e.target.value ? parseInt(e.target.value) : '')}
+            onChange={(e) => onFilterChange('port', e.target.value ? e.target.value : '')}
             className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
         </div>

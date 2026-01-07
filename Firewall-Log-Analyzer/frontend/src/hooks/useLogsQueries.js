@@ -48,6 +48,11 @@ export const useLogs = (params = {}) => {
     sort_order,
   ];
 
+  // Check if port or search filter is active - these are the filters that should pause incoming logs
+  // When user is searching/filtering by port, we want to "freeze" the view to show only matching logs
+  // New logs will resume being added when the filter is cleared
+  const hasSearchFilter = !!(port || search);
+  
   return useQuery({
     queryKey,
     queryFn: () => {
@@ -66,10 +71,8 @@ export const useLogs = (params = {}) => {
       if (log_source) queryParams.log_source = log_source;
       if (protocol) queryParams.protocol = protocol;
       if (port) {
-        const portNum = parseInt(port, 10);
-        if (!isNaN(portNum)) {
-          queryParams.destination_port = portNum;
-        }
+        // Pass port to getLogs, which will convert it to destination_port for the API
+        queryParams.port = port;
       }
       if (search) queryParams.search = search;
 
@@ -77,6 +80,12 @@ export const useLogs = (params = {}) => {
     },
     staleTime: 30000, // 30 seconds
     keepPreviousData: true, // Keep previous data while fetching new page
+    // When port or search filter is active, pause automatic refetching
+    // This prevents new incoming logs from interfering with filtered search results
+    // User can still manually refresh if needed
+    refetchInterval: hasSearchFilter ? false : undefined, // Disable polling when searching
+    refetchOnWindowFocus: !hasSearchFilter, // Don't refetch on window focus when searching
+    refetchOnMount: !hasSearchFilter, // Don't refetch on mount when searching
   });
 };
 
