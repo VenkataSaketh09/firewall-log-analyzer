@@ -7,7 +7,7 @@ import EventTypesChart from '../charts/EventTypesChart';
 import ProtocolUsageChart from '../charts/ProtocolUsageChart';
 import LogsOverTimeChart from '../charts/LogsOverTimeChart';
 
-const ReportPreview = ({ report, loading }) => {
+const ReportPreview = ({ report, loading, includeThreats = true }) => {
   if (loading) {
     return (
       <div className="bg-white rounded-lg shadow p-12 text-center">
@@ -237,15 +237,37 @@ const ReportPreview = ({ report, loading }) => {
       )}
 
       {/* Detailed Threat Detections Section */}
-      {report.threat_detections && (
+      {includeThreats && (
         <div className="mt-6 space-y-6">
           <div className="flex items-center gap-2 mb-4">
             <FiShield className="w-5 h-5 text-red-600" />
             <h4 className="text-lg font-semibold text-gray-800">Threat Detections</h4>
           </div>
 
+          {/* Check if any threats exist */}
+          {(() => {
+            // Check if threat_detections exists and has any threats
+            const threatDetections = report.threat_detections || {};
+            const hasBruteForce = threatDetections.brute_force_attacks && threatDetections.brute_force_attacks.length > 0;
+            const hasDDoS = threatDetections.ddos_attacks && threatDetections.ddos_attacks.length > 0;
+            const hasPortScan = threatDetections.port_scan_attacks && threatDetections.port_scan_attacks.length > 0;
+            const hasAnyThreats = hasBruteForce || hasDDoS || hasPortScan;
+
+            if (!hasAnyThreats) {
+              return (
+                <div className="bg-green-50 border border-green-200 rounded-lg p-6 text-center">
+                  <FiShield className="w-12 h-12 text-green-600 mx-auto mb-3 opacity-50" />
+                  <p className="text-lg font-medium text-green-800">No threats detected</p>
+                  <p className="text-sm text-green-600 mt-1">No security threats were detected during this reporting period.</p>
+                </div>
+              );
+            }
+
+            return null;
+          })()}
+
           {/* Brute Force Attacks */}
-          {report.threat_detections.brute_force_attacks && report.threat_detections.brute_force_attacks.length > 0 && (
+          {report.threat_detections?.brute_force_attacks && report.threat_detections.brute_force_attacks.length > 0 && (
             <div className="bg-red-50 border border-red-200 rounded-lg p-4">
               <h5 className="font-semibold text-red-800 mb-3">Brute Force Attacks</h5>
               <div className="overflow-x-auto">
@@ -285,7 +307,7 @@ const ReportPreview = ({ report, loading }) => {
           )}
 
           {/* DDoS Attacks */}
-          {report.threat_detections.ddos_attacks && report.threat_detections.ddos_attacks.length > 0 && (
+          {report.threat_detections?.ddos_attacks && report.threat_detections.ddos_attacks.length > 0 && (
             <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
               <h5 className="font-semibold text-orange-800 mb-3">DDoS Attacks</h5>
               <div className="overflow-x-auto">
@@ -327,7 +349,7 @@ const ReportPreview = ({ report, loading }) => {
           )}
 
           {/* Port Scan Attacks */}
-          {report.threat_detections.port_scan_attacks && report.threat_detections.port_scan_attacks.length > 0 && (
+          {report.threat_detections?.port_scan_attacks && report.threat_detections.port_scan_attacks.length > 0 && (
             <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
               <h5 className="font-semibold text-yellow-800 mb-3">Port Scan Attacks</h5>
               <div className="overflow-x-auto">
@@ -401,6 +423,7 @@ const ReportPreview = ({ report, loading }) => {
                           log.severity === 'CRITICAL' ? 'bg-red-200 text-red-800' :
                           log.severity === 'HIGH' ? 'bg-orange-200 text-orange-800' :
                           log.severity === 'MEDIUM' ? 'bg-yellow-200 text-yellow-800' :
+                          log.severity === 'LOW' ? 'bg-green-200 text-green-800' :
                           'bg-gray-200 text-gray-800'
                         }`}>
                           {log.severity || 'UNKNOWN'}

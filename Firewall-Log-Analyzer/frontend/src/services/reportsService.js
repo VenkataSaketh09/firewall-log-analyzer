@@ -7,7 +7,11 @@ export const getDailyReport = async (date = null, options = {}) => {
   const params = { ...options };
   if (date) params.date = date;
 
-  const response = await api.get('/api/reports/daily', { params });
+  // Use longer timeout for report generation (2 minutes)
+  const response = await api.get('/api/reports/daily', { 
+    params,
+    timeout: 120000 // 2 minutes
+  });
   return response.data;
 };
 
@@ -19,7 +23,11 @@ export const getWeeklyReport = async (weekStart = null, options = {}) => {
   // Backend expects query param: start_date (YYYY-MM-DD)
   if (weekStart) params.start_date = weekStart;
 
-  const response = await api.get('/api/reports/weekly', { params });
+  // Use longer timeout for report generation (2 minutes)
+  const response = await api.get('/api/reports/weekly', { 
+    params,
+    timeout: 120000 // 2 minutes
+  });
   return response.data;
 };
 
@@ -33,7 +41,11 @@ export const getCustomReport = async (startDate, endDate, options = {}) => {
     ...options,
   };
 
-  const response = await api.get('/api/reports/custom', { params });
+  // Use longer timeout for report generation (2 minutes)
+  const response = await api.get('/api/reports/custom', { 
+    params,
+    timeout: 120000 // 2 minutes
+  });
   return response.data;
 };
 

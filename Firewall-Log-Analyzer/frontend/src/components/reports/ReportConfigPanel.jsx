@@ -26,6 +26,7 @@ const ReportConfigPanel = ({ reportType, config, onConfigChange }) => {
             onChange={(e) => onConfigChange('week_start', e.target.value)}
             className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
+          <p className="mt-1 text-xs text-gray-500">Report covers 7 days from this date up to today</p>
         </div>
       )}
 
