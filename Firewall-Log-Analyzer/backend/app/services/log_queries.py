@@ -27,8 +27,15 @@ def build_log_query(
     if event_type:
         query["event_type"] = event_type
     
-    if destination_port:
-        query["destination_port"] = destination_port
+    if destination_port is not None:
+        # Ensure destination_port is an integer for exact match
+        # MongoDB is type-sensitive, so we match both int and string representations
+        try:
+            port_int = int(destination_port)
+            query["destination_port"] = port_int
+        except (ValueError, TypeError):
+            # If conversion fails, skip this filter
+            pass
     
     if protocol:
         query["protocol"] = protocol
@@ -124,6 +131,8 @@ def get_logs(
             "timestamp": ("timestamp", sort_direction),
             "source_ip": ("source_ip", sort_direction),
             "event_type": ("event_type", sort_direction),
+            "destination_port": ("destination_port", sort_direction),
+            "protocol": ("protocol", sort_direction),
         }
         sort_criteria = [sort_fields.get(sort_by, ("timestamp", DESCENDING))]
         

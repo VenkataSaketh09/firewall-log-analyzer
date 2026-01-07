@@ -5,7 +5,7 @@
   },
   "evaluations": [
     {
-      "evaluated_at_utc": "2025-12-31T11:43:01.582014+00:00",
+      "evaluated_at_utc": "2026-01-01T11:17:00.784368+00:00",
       "test": {
         "accuracy": 0.39666666666666667,
         "classification_report": {
@@ -432,7 +432,7 @@
       }
     }
   },
-  "trained_at_utc": "2025-12-31T11:42:51.825490+00:00",
+  "trained_at_utc": "2026-01-01T11:16:49.775856+00:00",
   "validation": {
     "accuracy": 0.4166666666666667,
     "classification_report": {

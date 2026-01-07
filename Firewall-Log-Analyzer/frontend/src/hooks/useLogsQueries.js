@@ -66,9 +66,12 @@ export const useLogs = (params = {}) => {
       if (log_source) queryParams.log_source = log_source;
       if (protocol) queryParams.protocol = protocol;
       if (port) {
-        const portNum = parseInt(port, 10);
-        if (!isNaN(portNum)) {
-          queryParams.destination_port = portNum;
+        const portStr = String(port).trim();
+        if (portStr !== '') {
+          const portNum = parseInt(portStr, 10);
+          if (!isNaN(portNum) && portNum >= 1 && portNum <= 65535) {
+            queryParams.destination_port = portNum;
+          }
         }
       }
       if (search) queryParams.search = search;

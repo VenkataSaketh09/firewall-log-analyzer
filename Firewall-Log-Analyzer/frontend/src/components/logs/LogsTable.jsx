@@ -70,12 +70,14 @@ const LogsTable = ({ logs, onSort, sortBy, sortOrder, onViewDetails, selectedLog
         header: () => (
           <div className="flex items-center gap-1">
             Timestamp
-            {sortBy === 'timestamp' && (
+            {sortBy === 'timestamp' ? (
               sortOrder === 'asc' ? (
                 <FiChevronUp className="w-4 h-4" />
               ) : (
                 <FiChevronDown className="w-4 h-4" />
               )
+            ) : (
+              <span className="text-gray-400 opacity-50 text-xs">↕</span>
             )}
           </div>
         ),
@@ -91,12 +93,14 @@ const LogsTable = ({ logs, onSort, sortBy, sortOrder, onViewDetails, selectedLog
         header: () => (
           <div className="flex items-center gap-1">
             Source IP
-            {sortBy === 'source_ip' && (
+            {sortBy === 'source_ip' ? (
               sortOrder === 'asc' ? (
                 <FiChevronUp className="w-4 h-4" />
               ) : (
                 <FiChevronDown className="w-4 h-4" />
               )
+            ) : (
+              <span className="text-gray-400 opacity-50 text-xs">↕</span>
             )}
           </div>
         ),
@@ -111,12 +115,14 @@ const LogsTable = ({ logs, onSort, sortBy, sortOrder, onViewDetails, selectedLog
         header: () => (
           <div className="flex items-center gap-1">
             Severity
-            {sortBy === 'severity' && (
+            {sortBy === 'severity' ? (
               sortOrder === 'asc' ? (
                 <FiChevronUp className="w-4 h-4" />
               ) : (
                 <FiChevronDown className="w-4 h-4" />
               )
+            ) : (
+              <span className="text-gray-400 opacity-50 text-xs">↕</span>
             )}
           </div>
         ),
@@ -124,31 +130,22 @@ const LogsTable = ({ logs, onSort, sortBy, sortOrder, onViewDetails, selectedLog
         enableSorting: true,
       }),
       columnHelper.accessor('protocol', {
-        header: () => (
-          <div className="flex items-center gap-1">
-            Protocol
-            {sortBy === 'protocol' && (
-              sortOrder === 'asc' ? (
-                <FiChevronUp className="w-4 h-4" />
-              ) : (
-                <FiChevronDown className="w-4 h-4" />
-              )
-            )}
-          </div>
-        ),
+        header: 'Protocol',
         cell: (info) => <span className="text-sm text-gray-900">{info.getValue() || 'N/A'}</span>,
-        enableSorting: true,
+        enableSorting: false,
       }),
       columnHelper.accessor('destination_port', {
         header: () => (
           <div className="flex items-center gap-1">
             Port
-            {sortBy === 'destination_port' && (
+            {sortBy === 'destination_port' ? (
               sortOrder === 'asc' ? (
                 <FiChevronUp className="w-4 h-4" />
               ) : (
                 <FiChevronDown className="w-4 h-4" />
               )
+            ) : (
+              <span className="text-gray-400 opacity-50 text-xs">↕</span>
             )}
           </div>
         ),

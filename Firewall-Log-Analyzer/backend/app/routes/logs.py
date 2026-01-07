@@ -98,7 +98,7 @@ def get_logs_endpoint(
     start_date: Optional[datetime] = Query(None, description="Start date (ISO format)"),
     end_date: Optional[datetime] = Query(None, description="End date (ISO format)"),
     search: Optional[str] = Query(None, description="Search in source_ip, raw_log, or username"),
-    sort_by: str = Query("timestamp", description="Field to sort by (timestamp, severity, source_ip, event_type)"),
+    sort_by: str = Query("timestamp", description="Field to sort by (timestamp, severity, source_ip, event_type, destination_port, protocol)"),
     sort_order: str = Query("desc", regex="^(asc|desc)$", description="Sort order (asc or desc)"),
     include_reputation: bool = Query(False, description="Include VirusTotal IP reputation data")
 ):
@@ -189,7 +189,7 @@ def export_logs_endpoint(
     start_date: Optional[datetime] = Query(None, description="Start date (ISO format)"),
     end_date: Optional[datetime] = Query(None, description="End date (ISO format)"),
     search: Optional[str] = Query(None, description="Search in source_ip, raw_log, or username"),
-    sort_by: str = Query("timestamp", description="Field to sort by (timestamp, severity, source_ip, event_type)"),
+    sort_by: str = Query("timestamp", description="Field to sort by (timestamp, severity, source_ip, event_type, destination_port, protocol)"),
     sort_order: str = Query("desc", regex="^(asc|desc)$", description="Sort order (asc or desc)")
 ):
     """Export logs in CSV or JSON format with filtering"""
@@ -328,7 +328,7 @@ def export_logs_pdf_endpoint(
     start_date: Optional[datetime] = Query(None, description="Start date (ISO format)"),
     end_date: Optional[datetime] = Query(None, description="End date (ISO format)"),
     search: Optional[str] = Query(None, description="Search in source_ip, raw_log, or username"),
-    sort_by: str = Query("timestamp", description="Field to sort by (timestamp, severity, source_ip, event_type)"),
+    sort_by: str = Query("timestamp", description="Field to sort by (timestamp, severity, source_ip, event_type, destination_port, protocol)"),
     sort_order: str = Query("desc", regex="^(asc|desc)$", description="Sort order (asc or desc)")
 ):
     """Export logs to PDF (color-coded per row) with filtering"""

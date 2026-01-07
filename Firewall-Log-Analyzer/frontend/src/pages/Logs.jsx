@@ -72,7 +72,7 @@ const Logs = () => {
     event_type: filters.event_type || null,
     log_source: filters.log_source || null,
     protocol: filters.protocol || null,
-    port: filters.port || null,
+    port: filters.port && filters.port.trim() !== '' ? filters.port.trim() : null,
     search: filters.search || null,
   });
 

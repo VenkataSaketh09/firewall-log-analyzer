@@ -36,9 +36,12 @@ export const getLogs = async (params = {}) => {
   if (protocol) queryParams.protocol = protocol;
   if (port) {
     // Convert port to integer and use destination_port parameter name (backend expects integer)
-    const portNum = parseInt(port, 10);
-    if (!isNaN(portNum)) {
-      queryParams.destination_port = portNum;
+    const portStr = String(port).trim();
+    if (portStr !== '') {
+      const portNum = parseInt(portStr, 10);
+      if (!isNaN(portNum) && portNum >= 1 && portNum <= 65535) {
+        queryParams.destination_port = portNum;
+      }
     }
   }
   if (search) queryParams.search = search;
