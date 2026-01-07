@@ -284,7 +284,7 @@ const Reports = () => {
                 <p className="text-red-800">{error}</p>
               </div>
             )}
-            <ReportPreview report={report} loading={loading} />
+            <ReportPreview report={report} loading={loading} includeThreats={config.include_threats} />
           </div>
         </div>
 
