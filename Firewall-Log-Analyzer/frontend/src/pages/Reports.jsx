@@ -15,9 +15,18 @@ import ReportHistory from '../components/reports/ReportHistory';
 
 const Reports = () => {
   const [reportType, setReportType] = useState('daily');
+  
+  // Calculate 7 days back from today for weekly reports
+  const getWeekStartDate = () => {
+    const today = new Date();
+    const weekAgo = new Date(today);
+    weekAgo.setDate(today.getDate() - 7);
+    return weekAgo.toISOString().split('T')[0];
+  };
+  
   const [config, setConfig] = useState({
     date: new Date().toISOString().split('T')[0],
-    week_start: new Date().toISOString().split('T')[0],
+    week_start: getWeekStartDate(), // 7 days back from today
     start_date: '',
     end_date: '',
     include_charts: false,
@@ -180,7 +189,20 @@ const Reports = () => {
             {reportTypes.map((type) => (
               <button
                 key={type.id}
-                onClick={() => setReportType(type.id)}
+                onClick={() => {
+                  setReportType(type.id);
+                  setShouldFetch(false); // Reset fetch flag when switching report types
+                  // When switching to weekly, automatically set week_start to 7 days ago
+                  if (type.id === 'weekly') {
+                    const today = new Date();
+                    const weekAgo = new Date(today);
+                    weekAgo.setDate(today.getDate() - 7);
+                    setConfig((prev) => ({
+                      ...prev,
+                      week_start: weekAgo.toISOString().split('T')[0]
+                    }));
+                  }
+                }}
                 className={`p-4 border-2 rounded-lg text-left transition-colors ${
                   reportType === type.id
                     ? 'border-blue-500 bg-blue-50'
