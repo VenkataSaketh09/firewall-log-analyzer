@@ -198,7 +198,44 @@ def get_or_compute_alerts(
 
     cached = get_cached_alert_docs(bucket_end=bucket_end, lookback_seconds=lookback_seconds)
     if cached is not None:
+        # #region agent log
+        import json
+        with open('/home/saketh/firewall-log-analyzer/Firewall-Log-Analyzer/.cursor/debug.log', 'a') as f:
+            f.write(json.dumps({
+                "sessionId": "debug-session",
+                "runId": "run1",
+                "hypothesisId": "A",
+                "location": "alert_service.py:200",
+                "message": "Dashboard: using cached alerts",
+                "data": {
+                    "bucket_end": bucket_end.isoformat(),
+                    "lookback_seconds": lookback_seconds,
+                    "cached_count": len(cached) if cached else 0,
+                    "port_scan_cached": [{"source_ip": d.get("source_ip"), "severity": d.get("severity")} for d in (cached or []) if d.get("alert_type") == "PORT_SCAN"]
+                },
+                "timestamp": datetime.utcnow().timestamp() * 1000
+            }) + '\n')
+        # #endregion
         return start_date, bucket_end, cached
+
+    # #region agent log
+    import json
+    with open('/home/saketh/firewall-log-analyzer/Firewall-Log-Analyzer/.cursor/debug.log', 'a') as f:
+        f.write(json.dumps({
+            "sessionId": "debug-session",
+            "runId": "run1",
+            "hypothesisId": "A",
+            "location": "alert_service.py:203",
+            "message": "Dashboard: computing new alerts (cache miss)",
+            "data": {
+                "bucket_end": bucket_end.isoformat(),
+                "lookback_seconds": lookback_seconds,
+                "start_date": start_date.isoformat(),
+                "end_date": bucket_end.isoformat()
+            },
+            "timestamp": datetime.utcnow().timestamp() * 1000
+        }) + '\n')
+    # #endregion
 
     computed = compute_alert_docs(
         start_date=start_date,
@@ -206,6 +243,24 @@ def get_or_compute_alerts(
         bucket_end=bucket_end,
         lookback_seconds=lookback_seconds,
     )
+    
+    # #region agent log
+    import json
+    with open('/home/saketh/firewall-log-analyzer/Firewall-Log-Analyzer/.cursor/debug.log', 'a') as f:
+        f.write(json.dumps({
+            "sessionId": "debug-session",
+            "runId": "run1",
+            "hypothesisId": "A",
+            "location": "alert_service.py:209",
+            "message": "Dashboard: computed alerts",
+            "data": {
+                "computed_count": len(computed),
+                "port_scan_computed": [{"source_ip": d.get("source_ip"), "severity": d.get("severity")} for d in computed if d.get("alert_type") == "PORT_SCAN"]
+            },
+            "timestamp": datetime.utcnow().timestamp() * 1000
+        }) + '\n')
+    # #endregion
+    
     upsert_alert_docs(computed)
     return start_date, bucket_end, computed
 

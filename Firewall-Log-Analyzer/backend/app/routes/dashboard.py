@@ -29,12 +29,65 @@ def get_dashboard_summary():
     try:
         start_date, end_date, alert_docs = get_or_compute_alerts()
         
+        # #region agent log
+        import json
+        with open('/home/saketh/firewall-log-analyzer/Firewall-Log-Analyzer/.cursor/debug.log', 'a') as f:
+            f.write(json.dumps({
+                "sessionId": "debug-session",
+                "runId": "run1",
+                "hypothesisId": "A",
+                "location": "dashboard.py:30",
+                "message": "Dashboard: get_or_compute_alerts returned",
+                "data": {
+                    "start_date": start_date.isoformat() if start_date else None,
+                    "end_date": end_date.isoformat() if end_date else None,
+                    "total_alert_docs": len(alert_docs),
+                    "port_scan_alerts": [{"source_ip": d.get("source_ip"), "severity": d.get("severity"), "alert_type": d.get("alert_type"), "last_seen": d.get("last_seen").isoformat() if d.get("last_seen") else None} for d in alert_docs if d.get("alert_type") == "PORT_SCAN"]
+                },
+                "timestamp": datetime.now(timezone.utc).timestamp() * 1000
+            }) + '\n')
+        # #endregion
+        
         # 1. Active alerts (high-severity)
         active_alerts: list[ActiveAlert] = []
         sorted_docs = sort_alert_docs(alert_docs)
+        
+        # #region agent log
+        with open('/home/saketh/firewall-log-analyzer/Firewall-Log-Analyzer/.cursor/debug.log', 'a') as f:
+            f.write(json.dumps({
+                "sessionId": "debug-session",
+                "runId": "run1",
+                "hypothesisId": "B",
+                "location": "dashboard.py:35",
+                "message": "Dashboard: sorted alert docs before filtering",
+                "data": {
+                    "total_sorted": len(sorted_docs),
+                    "port_scan_sorted": [{"source_ip": d.get("source_ip"), "severity": d.get("severity"), "alert_type": d.get("alert_type")} for d in sorted_docs if d.get("alert_type") == "PORT_SCAN"]
+                },
+                "timestamp": datetime.now(timezone.utc).timestamp() * 1000
+            }) + '\n')
+        # #endregion
+        
         for doc in sorted_docs:
             sev = doc.get("severity", "LOW")
             if sev not in ["CRITICAL", "HIGH"]:
+                # #region agent log
+                with open('/home/saketh/firewall-log-analyzer/Firewall-Log-Analyzer/.cursor/debug.log', 'a') as f:
+                    f.write(json.dumps({
+                        "sessionId": "debug-session",
+                        "runId": "run1",
+                        "hypothesisId": "C",
+                        "location": "dashboard.py:37",
+                        "message": "Dashboard: alert filtered out by severity",
+                        "data": {
+                            "source_ip": doc.get("source_ip"),
+                            "alert_type": doc.get("alert_type"),
+                            "severity": sev,
+                            "reason": "severity_not_critical_or_high"
+                        },
+                        "timestamp": datetime.now(timezone.utc).timestamp() * 1000
+                    }) + '\n')
+                # #endregion
                 continue
             active_alerts.append(
                 ActiveAlert(
@@ -48,6 +101,22 @@ def get_dashboard_summary():
             )
             if len(active_alerts) >= 10:
                 break
+        
+        # #region agent log
+        with open('/home/saketh/firewall-log-analyzer/Firewall-Log-Analyzer/.cursor/debug.log', 'a') as f:
+            f.write(json.dumps({
+                "sessionId": "debug-session",
+                "runId": "run1",
+                "hypothesisId": "D",
+                "location": "dashboard.py:50",
+                "message": "Dashboard: final active_alerts",
+                "data": {
+                    "total_active_alerts": len(active_alerts),
+                    "port_scan_active_alerts": [{"type": a.type, "source_ip": a.source_ip, "severity": a.severity, "detected_at": a.detected_at.isoformat() if a.detected_at else None} for a in active_alerts if a.type == "PORT_SCAN"]
+                },
+                "timestamp": datetime.now(timezone.utc).timestamp() * 1000
+            }) + '\n')
+        # #endregion
         
         # 2. Threat summary from cached alerts (counts of detections)
         all_threats = alert_docs or []

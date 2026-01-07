@@ -164,6 +164,29 @@ def _generate_report(
             start_date=start_date,
             end_date=end_date
         )
+        
+        # #region agent log
+        import json
+        with open('/home/saketh/firewall-log-analyzer/Firewall-Log-Analyzer/.cursor/debug.log', 'a') as f:
+            f.write(json.dumps({
+                "sessionId": "debug-session",
+                "runId": "run1",
+                "hypothesisId": "G",
+                "location": "report_service.py:166",
+                "message": "Reports page: detect_port_scan returned",
+                "data": {
+                    "report_type": report_type,
+                    "start_date": start_date.isoformat() if start_date else None,
+                    "end_date": end_date.isoformat() if end_date else None,
+                    "time_window_minutes": 10,
+                    "unique_ports_threshold": 10,
+                    "min_total_attempts": 20,
+                    "total_detections": len(port_scan_detections),
+                    "detections": [{"source_ip": d.get("source_ip"), "severity": d.get("severity"), "unique_ports_attempted": d.get("unique_ports_attempted"), "last_attempt": d.get("last_attempt").isoformat() if d.get("last_attempt") else None} for d in port_scan_detections]
+                },
+                "timestamp": datetime.utcnow().timestamp() * 1000
+            }) + '\n')
+        # #endregion
     
     threat_summary = None
     if include_summary:

@@ -184,20 +184,6 @@ const LogFilterPanel = ({ filters, onFilterChange, onReset }) => {
           />
         </div>
       </div>
-
-      {/* Search */}
-      <div className="mt-4">
-        <label className="block text-sm font-medium text-gray-700 mb-1">
-          Search Log Text
-        </label>
-        <input
-          type="text"
-          placeholder="Search in raw log text..."
-          value={filters.search || ''}
-          onChange={(e) => onFilterChange('search', e.target.value)}
-          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-        />
-      </div>
     </div>
   );
 };
