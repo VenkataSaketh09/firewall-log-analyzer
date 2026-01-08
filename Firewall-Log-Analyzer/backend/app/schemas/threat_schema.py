@@ -176,3 +176,45 @@ class PortScanConfig(BaseModel):
     source_ip: Optional[str] = Field(None, description="Optional specific IP to check")
     protocol: Optional[str] = Field(None, description="Optional protocol filter (TCP/UDP)")
 
+
+class SqlInjectionDetection(BaseModel):
+    """Response model for a SQL injection detection"""
+    source_ip: str
+    total_attempts: int
+    injection_attempts: int
+    auth_failed_count: int
+    port_access_count: int
+    ports_attempted: List[int]
+    first_attempt: datetime
+    last_attempt: datetime
+    detection_type: str  # SQL_INJECTION or SQL_SUSPICIOUS_ACTIVITY
+    severity: str  # CRITICAL, HIGH, MEDIUM, LOW
+    virustotal: Optional[VirusTotalReputation] = None
+    # ML enrichment (optional)
+    ml_anomaly_score: Optional[float] = None
+    ml_predicted_label: Optional[str] = None
+    ml_confidence: Optional[float] = None
+    ml_risk_score: Optional[float] = None  # 0-100
+    ml_reasoning: Optional[list[str]] = None
+
+    class Config:
+        json_encoders = {
+            datetime: lambda v: v.isoformat()
+        }
+
+
+class SqlInjectionDetectionsResponse(BaseModel):
+    """Response model for SQL injection detections list"""
+    detections: List[SqlInjectionDetection]
+    total_detections: int
+    min_attempts: int
+    time_range: dict  # {"start": datetime, "end": datetime}
+
+
+class SqlInjectionConfig(BaseModel):
+    """Request model for configuring SQL injection detection"""
+    min_attempts: int = Field(1, ge=1, le=1000, description="Minimum number of attempts to trigger detection")
+    start_date: Optional[datetime] = Field(None, description="Start date for analysis (ISO format)")
+    end_date: Optional[datetime] = Field(None, description="End date for analysis (ISO format)")
+    source_ip: Optional[str] = Field(None, description="Optional specific IP to check")
+

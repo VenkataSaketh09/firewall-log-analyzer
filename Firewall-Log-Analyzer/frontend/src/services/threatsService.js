@@ -70,6 +70,31 @@ export const getPortScanThreats = async (params = {}) => {
 };
 
 /**
+ * Get SQL injection threats
+ */
+export const getSqlInjectionThreats = async (params = {}) => {
+  const {
+    start_date = null,
+    end_date = null,
+    severity = null,
+    source_ip = null,
+    include_ml = true,
+    min_attempts = 1,
+  } = params;
+
+  const queryParams = {};
+  if (start_date) queryParams.start_date = start_date;
+  if (end_date) queryParams.end_date = end_date;
+  if (severity) queryParams.severity = severity;
+  if (source_ip) queryParams.source_ip = source_ip;
+  queryParams.include_ml = include_ml;
+  queryParams.min_attempts = min_attempts;
+
+  const response = await api.get('/api/threats/sql-injection', { params: queryParams });
+  return response.data;
+};
+
+/**
  * Get IP reputation
  */
 export const getIPReputation = async (ip) => {

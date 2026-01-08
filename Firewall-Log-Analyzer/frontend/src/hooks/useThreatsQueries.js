@@ -3,6 +3,7 @@ import {
   getBruteForceThreats,
   getDDoSThreats,
   getPortScanThreats,
+  getSqlInjectionThreats,
   exportThreatsCSV,
   exportThreatsJSON,
   getBruteForceTimeline,
@@ -85,18 +86,45 @@ export const usePortScanThreats = (params = {}) => {
 };
 
 /**
+ * Hook to fetch SQL injection threats
+ */
+export const useSqlInjectionThreats = (params = {}) => {
+  const {
+    start_date = null,
+    end_date = null,
+    severity = null,
+    source_ip = null,
+  } = params;
+
+  return useQuery({
+    queryKey: ['threats', 'sql-injection', start_date, end_date, severity, source_ip],
+    queryFn: () => {
+      const queryParams = {};
+      if (start_date) queryParams.start_date = formatDateForAPI(new Date(start_date));
+      if (end_date) queryParams.end_date = formatDateForAPI(new Date(end_date));
+      if (severity) queryParams.severity = severity;
+      if (source_ip) queryParams.source_ip = source_ip;
+      return getSqlInjectionThreats(queryParams);
+    },
+    staleTime: 30000, // 30 seconds
+  });
+};
+
+/**
  * Hook to fetch threats based on active tab
  */
 export const useThreats = (activeTab, filters = {}) => {
   const bruteForce = useBruteForceThreats(filters);
   const ddos = useDDoSThreats(filters);
   const portScan = usePortScanThreats(filters);
+  const sqlInjection = useSqlInjectionThreats(filters);
 
   // Only enable the query for the active tab
   const queries = {
     'brute-force': { ...bruteForce, enabled: activeTab === 'brute-force' },
     'ddos': { ...ddos, enabled: activeTab === 'ddos' },
     'port-scan': { ...portScan, enabled: activeTab === 'port-scan' },
+    'sql-injection': { ...sqlInjection, enabled: activeTab === 'sql-injection' },
   };
 
   return queries[activeTab] || bruteForce;
