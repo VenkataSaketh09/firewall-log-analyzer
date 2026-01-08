@@ -453,9 +453,16 @@ The backend supports parsing logs from multiple sources:
   - Complete log information
   - **ML Analysis Section**:
     - "Analyze" button for on-demand ML prediction
+    - **Automatic Threat Type Classification**:
+      - Automatically infers threat type hints from event types for improved ML predictions
+      - BRUTE_FORCE detection from SSH_FAILED_LOGIN events
+      - DDOS detection from DDOS/FLOOD events
+      - PORT_SCAN detection from PORT_SCAN/SCAN events
+      - **SQL_INJECTION detection from SQL-related events** (e.g., SQL_INJECTION_ATTEMPT)
+      - SUSPICIOUS detection from SUSPICIOUS events
     - Risk score (0-100) with progress bar
     - Anomaly score (0-1) with visualization
-    - Predicted label (BRUTE_FORCE, DDOS, PORT_SCAN, NORMAL, etc.)
+    - Predicted label (BRUTE_FORCE, DDOS, PORT_SCAN, SQL_INJECTION, NORMAL, etc.)
     - Confidence score (0-1)
     - ML reasoning (detailed analysis)
 - **Pagination**: Configurable page size (25, 50, 100, 200)
@@ -749,6 +756,23 @@ If ML models are unavailable:
 - ML service availability
 - Notification service status
 - WebSocket connection health
+
+### 12. **Frontend ML Analysis & Threat Classification**
+- On-demand ML prediction in Log Details Modal
+- Automatic threat type classification from event types:
+  - BRUTE_FORCE detection from SSH_FAILED_LOGIN events
+  - DDOS detection from DDOS/FLOOD events
+  - PORT_SCAN detection from PORT_SCAN/SCAN events
+  - **SQL_INJECTION detection from SQL-related events** (e.g., SQL_INJECTION_ATTEMPT)
+  - SUSPICIOUS detection from SUSPICIOUS events
+- Threat type hint inference for improved ML prediction accuracy
+- Visual metrics display:
+  - Risk score (0-100) with color-coded progress bar
+  - Anomaly score (0-1) with visualization
+  - Predicted label with threat type badges
+  - Confidence score (0-1) with progress indicator
+- Detailed ML reasoning breakdown with color-coded analysis
+- Enhanced ML predictions through automatic threat type hints
 
 ---
 

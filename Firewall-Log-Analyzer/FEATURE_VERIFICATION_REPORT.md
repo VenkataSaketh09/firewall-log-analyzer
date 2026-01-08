@@ -109,7 +109,34 @@
 - Attack window identification
 - Severity calculation
 
-#### 3.3 SQL Attack Detection ✅
+#### 3.3 DDoS/Flood Attack Detection ✅
+**Location:** `backend/app/services/ddos_detection.py`
+
+**Details:**
+- ✅ Detects single IP floods (high request rate from one source)
+- ✅ Detects distributed floods (multiple IPs targeting same destination/port)
+- ✅ Configurable time window (default: 60 seconds)
+- ✅ Configurable single IP threshold (default: 100 requests per window)
+- ✅ Configurable distributed IP count threshold (default: 10 unique IPs)
+- ✅ Configurable distributed request threshold (default: 500 total requests)
+- ✅ Identifies attack windows with peak request rates
+- ✅ Calculates severity (CRITICAL, HIGH, MEDIUM, LOW) based on request rate and IP count
+- ✅ Tracks target destination ports and protocols
+- ✅ ML integration for anomaly scoring
+
+**Code Evidence:**
+- `backend/app/services/ddos_detection.py` - Lines 8-358
+- `backend/app/routes/threats.py` - Lines 509-617 (API endpoints)
+
+**Features:**
+- Single IP flood detection (rate-based)
+- Distributed attack detection (coordinated multi-IP attacks)
+- Attack window identification with peak rates
+- Severity calculation based on request rate and distributed IP count
+- Request rate calculation (requests per second)
+- Protocol and port filtering support
+
+#### 3.4 SQL Attack Detection ✅
 **Location:** `backend/app/services/sql_parser.py`, `backend/app/services/iptables_parser.py`
 
 **Details:**
@@ -131,7 +158,7 @@
 - SQL port access monitoring
 - Multiple database type support
 
-#### 3.4 Suspicious IP Behavior (ML-Based) ✅
+#### 3.5 Suspicious IP Behavior (ML-Based) ✅
 **Location:** `backend/app/services/ml_service.py`
 
 **Details:**
@@ -243,6 +270,36 @@
 - ✅ Protocol filter
 - ✅ Port filter
 - ✅ Search filter (raw log text)
+
+#### 5.4 Log Details Modal with ML Analysis ✅
+**Location:** `frontend/src/components/logs/LogDetailsModal.jsx`
+
+**Details:**
+- ✅ Complete log information display
+- ✅ ML Analysis section with on-demand prediction
+- ✅ Automatic threat type classification:
+  - ✅ BRUTE_FORCE detection from SSH_FAILED events
+  - ✅ DDOS detection from DDOS/FLOOD events
+  - ✅ PORT_SCAN detection from PORT_SCAN/SCAN events
+  - ✅ **SQL_INJECTION detection from SQL-related events**
+  - ✅ SUSPICIOUS detection from SUSPICIOUS events
+- ✅ Threat type hint inference for improved ML predictions
+- ✅ Risk score visualization (0-100)
+- ✅ Anomaly score visualization (0-1)
+- ✅ Predicted label display
+- ✅ Confidence score display
+- ✅ Detailed ML reasoning analysis
+
+**Code Evidence:**
+- `frontend/src/components/logs/LogDetailsModal.jsx` - Lines 62-75 (threat type hint inference, including SQL_INJECTION on line 72)
+- ML analysis section: Lines 54-304
+
+**Features:**
+- Automatic event type to threat type mapping
+- SQL injection classification in frontend interface
+- Enhanced ML prediction accuracy through threat type hints
+- Visual metrics display with progress bars
+- Comprehensive reasoning breakdown
 
 ---
 
@@ -405,6 +462,7 @@
 | Log Parsing | ✅ | 100% |
 | Brute Force Detection | ✅ | 100% |
 | Port Scan Detection | ✅ | 100% |
+| DDoS/Flood Detection | ✅ | 100% |
 | SQL Attack Detection | ✅ | 100% |
 | ML-Based Anomaly Detection | ✅ | 100% |
 | Log Retention | ✅ | 100% |
@@ -444,13 +502,20 @@
    - Port enumeration detection
    - Attack window identification
 
-3. ✅ **SQL Attacks**
+3. ✅ **DDoS/Flood Attacks**
+   - Single IP flood detection (high request rate)
+   - Distributed flood detection (multiple IPs)
+   - Configurable time windows and thresholds
+   - Attack window identification with peak rates
+   - Request rate calculation (requests per second)
+
+4. ✅ **SQL Attacks**
    - SQL port access (1433, 3306, 5432)
    - SQL injection pattern detection
    - SQL authentication failures
    - Multiple database support
 
-4. ✅ **ML-Based Anomaly Detection**
+5. ✅ **ML-Based Anomaly Detection**
    - Isolation Forest algorithm
    - Unknown attack pattern detection
    - Risk scoring
@@ -494,6 +559,21 @@
    - Unblock functionality
    - Auto-blocked IP identification
    - Blocking history view
+
+6. ✅ **ML Analysis & Threat Classification**
+   - On-demand ML prediction in Log Details Modal
+   - Automatic threat type classification:
+     - BRUTE_FORCE from SSH_FAILED events
+     - DDOS from DDOS/FLOOD events
+     - PORT_SCAN from PORT_SCAN/SCAN events
+     - **SQL_INJECTION from SQL-related events**
+     - SUSPICIOUS from SUSPICIOUS events
+   - Threat type hint inference for improved ML accuracy
+   - Risk score visualization (0-100)
+   - Anomaly score visualization (0-1)
+   - Predicted label display
+   - Confidence score display
+   - Detailed ML reasoning analysis
 
 ### Database Features
 1. ✅ **Storage**
