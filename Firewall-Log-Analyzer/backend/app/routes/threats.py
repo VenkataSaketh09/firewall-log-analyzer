@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional, Literal
 import csv
 import io
@@ -10,6 +10,7 @@ from fastapi.responses import Response, StreamingResponse
 from app.services.brute_force_detection import detect_brute_force, get_brute_force_timeline
 from app.services.ddos_detection import detect_ddos
 from app.services.port_scan_detection import detect_port_scan
+from app.services.sql_injection_detection import detect_sql_injection
 from app.services.virustotal_service import get_multiple_ip_reputations, enhance_severity_with_reputation
 from app.services.auto_ip_blocking_service import auto_ip_blocking_service
 from app.schemas.threat_schema import (
@@ -24,7 +25,10 @@ from app.schemas.threat_schema import (
     PortScanDetectionsResponse,
     PortScanDetection,
     PortScanAttackWindow,
-    PortScanConfig
+    PortScanConfig,
+    SqlInjectionDetectionsResponse,
+    SqlInjectionDetection,
+    SqlInjectionConfig
 )
 from app.schemas.log_schema import VirusTotalReputation
 
@@ -979,5 +983,178 @@ def detect_port_scan_post(
         source_ip=config.source_ip,
         protocol=config.protocol,
         include_reputation=include_reputation
+    )
+
+
+@router.get("/sql-injection", response_model=SqlInjectionDetectionsResponse)
+def get_sql_injection_detections(
+    min_attempts: int = Query(1, ge=1, le=1000, description="Minimum number of attempts to trigger detection"),
+    start_date: Optional[datetime] = Query(None, description="Start date for analysis (ISO format)"),
+    end_date: Optional[datetime] = Query(None, description="End date for analysis (ISO format)"),
+    source_ip: Optional[str] = Query(None, description="Optional specific IP to check"),
+    severity: Optional[str] = Query(None, description="Optional severity filter (CRITICAL/HIGH/MEDIUM/LOW)"),
+    include_reputation: bool = Query(False, description="Include VirusTotal IP reputation data"),
+    include_ml: bool = Query(True, description="Include ML anomaly/classification/risk scoring if available"),
+    format: ThreatExportFormat = Query(None, description="Optional export format (csv/json)")
+):
+    """
+    Detect SQL injection attempts and suspicious SQL-related activities.
+    
+    Detects SQL injection attacks by analyzing log entries for SQL injection patterns,
+    failed SQL authentication attempts, and suspicious SQL port access activities.
+    
+    Returns a list of detected SQL injection attempts with detailed analysis including:
+    - Injection attempt counts
+    - Authentication failures
+    - Port access patterns
+    - Severity assessment
+    """
+    try:
+        from app.services.ml_service import ml_service
+        ml_service.initialize()
+
+        detections = detect_sql_injection(
+            start_date=start_date,
+            end_date=end_date,
+            source_ip=source_ip,
+            min_attempts=min_attempts
+        )
+
+        # Get reputation data if requested
+        reputation_data = {}
+        if include_reputation:
+            unique_ips = [d.get("source_ip") for d in detections if d.get("source_ip")]
+            if unique_ips:
+                reputation_data = get_multiple_ip_reputations(unique_ips)
+
+        # Convert to response models with ML enrichment
+        detection_models = []
+        for detection in detections:
+            detected_ip = detection.get("source_ip")
+            ip_reputation = None
+
+            if include_reputation and detected_ip and detected_ip in reputation_data:
+                rep_data = reputation_data[detected_ip]
+                if rep_data:
+                    ip_reputation = VirusTotalReputation(**rep_data)
+                    # Enhance severity based on reputation if needed
+                    current_severity = detection.get("severity", "LOW")
+                    detection["severity"] = enhance_severity_with_reputation(current_severity, rep_data)
+
+            model = SqlInjectionDetection(
+                source_ip=detected_ip,
+                total_attempts=detection.get("total_attempts", 0),
+                injection_attempts=detection.get("injection_attempts", 0),
+                auth_failed_count=detection.get("auth_failed_count", 0),
+                port_access_count=detection.get("port_access_count", 0),
+                ports_attempted=detection.get("ports_attempted", []),
+                first_attempt=detection.get("first_attempt"),
+                last_attempt=detection.get("last_attempt"),
+                detection_type=detection.get("detection_type", "SQL_INJECTION"),
+                severity=detection.get("severity", "LOW"),
+                virustotal=ip_reputation
+            )
+
+            if include_ml:
+                try:
+                    ml_result = ml_service.score(
+                        source_ip=detected_ip,
+                        threat_type_hint="SQL_INJECTION",
+                        severity_hint=detection.get("severity"),
+                        timestamp=detection.get("last_attempt"),
+                        event_type="SQL_INJECTION_ATTEMPT",
+                    )
+                    if ml_result.ml_available:
+                        model.ml_anomaly_score = ml_result.anomaly_score
+                        model.ml_predicted_label = ml_result.predicted_label
+                        model.ml_confidence = ml_result.confidence
+                        model.ml_risk_score = ml_result.risk_score
+                        model.ml_reasoning = ml_result.reasoning
+                except Exception:
+                    pass  # ML enrichment failed, continue without it
+
+            detection_models.append(model)
+
+        detection_models = _filter_by_severity(detection_models, severity)
+
+        # Determine time range
+        if start_date is None:
+            start_date = datetime.now(timezone.utc) - timedelta(hours=24)
+        if end_date is None:
+            end_date = datetime.now(timezone.utc)
+        if start_date is None:
+            start_date = end_date.replace(hour=0, minute=0, second=0, microsecond=0)
+
+        response_model = SqlInjectionDetectionsResponse(
+            detections=detection_models,
+            total_detections=len(detection_models),
+            min_attempts=min_attempts,
+            time_range={"start": start_date.isoformat(), "end": end_date.isoformat()}
+        )
+
+        if format == "csv":
+            return _csv_download_sql_injection(response_model)
+        elif format == "json":
+            return _json_download_sql_injection(response_model)
+
+        return response_model
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error detecting SQL injection attempts: {str(e)}")
+
+
+@router.post("/sql-injection", response_model=SqlInjectionDetectionsResponse)
+def detect_sql_injection_post(
+    config: SqlInjectionConfig = Body(..., description="SQL injection detection configuration"),
+    include_reputation: bool = Query(False, description="Include VirusTotal IP reputation data")
+):
+    """
+    Detect SQL injection attempts using POST method with configuration in request body.
+    """
+    return get_sql_injection_detections(
+        min_attempts=config.min_attempts,
+        start_date=config.start_date,
+        end_date=config.end_date,
+        source_ip=config.source_ip,
+        include_reputation=include_reputation
+    )
+
+
+def _csv_download_sql_injection(response: SqlInjectionDetectionsResponse) -> Response:
+    """Generate CSV download for SQL injection detections"""
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["SQL INJECTION ATTEMPTS"])
+    writer.writerow([])
+    writer.writerow(["Source IP", "Severity", "Total Attempts", "Injection Attempts", "Auth Failed", "Port Access", "Ports", "First Attempt", "Last Attempt", "ML Risk Score", "ML Predicted Label"])
+    
+    for d in response.detections:
+        writer.writerow([
+            d.source_ip,
+            d.severity,
+            d.total_attempts,
+            d.injection_attempts,
+            d.auth_failed_count,
+            d.port_access_count,
+            ", ".join(map(str, d.ports_attempted)) if d.ports_attempted else "",
+            d.first_attempt.isoformat() if d.first_attempt else "",
+            d.last_attempt.isoformat() if d.last_attempt else "",
+            d.ml_risk_score if d.ml_risk_score is not None else "",
+            d.ml_predicted_label or ""
+        ])
+    
+    output.seek(0)
+    return Response(
+        content=output.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="sql_injection_detections_{datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")}.csv"'}
+    )
+
+
+def _json_download_sql_injection(response: SqlInjectionDetectionsResponse) -> Response:
+    """Generate JSON download for SQL injection detections"""
+    return Response(
+        content=json.dumps(jsonable_encoder(response), indent=2),
+        media_type="application/json",
+        headers={"Content-Disposition": f'attachment; filename="sql_injection_detections_{datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")}.json"'}
     )
 

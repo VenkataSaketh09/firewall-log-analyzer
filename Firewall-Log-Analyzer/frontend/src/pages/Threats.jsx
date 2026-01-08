@@ -29,6 +29,7 @@ const Threats = () => {
     { id: 'brute-force', label: 'Brute Force' },
     { id: 'ddos', label: 'DDoS' },
     { id: 'port-scan', label: 'Port Scan' },
+    { id: 'sql-injection', label: 'SQL Injection' },
   ];
 
   // React Query hooks
@@ -99,26 +100,51 @@ const Threats = () => {
       });
     }
 
-    // port-scan
+    if (tabId === 'port-scan') {
+      return detections.map((d) => {
+        const timestamp = toIso(d.last_attempt || d.first_attempt);
+        return {
+          id: d.id || `port-scan-${d.source_ip || 'unknown'}-${timestamp || 'na'}`,
+          timestamp,
+          threat_type: 'PORT_SCAN',
+          source_ip: d.source_ip,
+          severity: d.severity,
+          attempt_count: d.total_attempts ?? null,
+          port: Array.isArray(d.ports_attempted) && d.ports_attempted.length === 1 ? d.ports_attempted[0] : null,
+          ml_risk_score: d?.ml_risk_score ?? null,
+          ml_anomaly_score: d?.ml_anomaly_score ?? null,
+          ml_predicted_label: d?.ml_predicted_label ?? null,
+          ml_confidence: d?.ml_confidence ?? null,
+          ml_reasoning: d?.ml_reasoning ?? null,
+          description:
+            d.unique_ports_attempted != null
+              ? `Potential port scan: ${d.unique_ports_attempted} unique ports`
+              : 'Potential port scan',
+          additional_info: d,
+        };
+      });
+    }
+
+    // sql-injection
     return detections.map((d) => {
       const timestamp = toIso(d.last_attempt || d.first_attempt);
       return {
-        id: d.id || `port-scan-${d.source_ip || 'unknown'}-${timestamp || 'na'}`,
+        id: d.id || `sql-injection-${d.source_ip || 'unknown'}-${timestamp || 'na'}`,
         timestamp,
-        threat_type: 'PORT_SCAN',
+        threat_type: 'SQL_INJECTION',
         source_ip: d.source_ip,
         severity: d.severity,
         attempt_count: d.total_attempts ?? null,
-        port: Array.isArray(d.ports_attempted) && d.ports_attempted.length === 1 ? d.ports_attempted[0] : null,
+        injection_count: d.injection_attempts ?? null,
         ml_risk_score: d?.ml_risk_score ?? null,
         ml_anomaly_score: d?.ml_anomaly_score ?? null,
         ml_predicted_label: d?.ml_predicted_label ?? null,
         ml_confidence: d?.ml_confidence ?? null,
         ml_reasoning: d?.ml_reasoning ?? null,
         description:
-          d.unique_ports_attempted != null
-            ? `Potential port scan: ${d.unique_ports_attempted} unique ports`
-            : 'Potential port scan',
+          d.injection_attempts > 0
+            ? `SQL injection attack: ${d.injection_attempts} injection attempt(s), ${d.total_attempts} total SQL attempts`
+            : `SQL suspicious activity: ${d.total_attempts} SQL-related attempts`,
         additional_info: d,
       };
     });

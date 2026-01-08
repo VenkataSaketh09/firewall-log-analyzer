@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 
 class ActiveAlert(BaseModel):
     """Model for an active alert"""
-    type: str = Field(..., description="Alert type: BRUTE_FORCE or DDOS")
+    type: str = Field(..., description="Alert type: BRUTE_FORCE, DDOS, PORT_SCAN, or SQL_INJECTION")
     source_ip: str
     severity: str = Field(..., description="CRITICAL, HIGH, MEDIUM, LOW")
     detected_at: datetime
@@ -18,6 +18,7 @@ class ThreatSummary(BaseModel):
     total_brute_force: int = Field(0, description="Total brute force detections in last 24 hours")
     total_ddos: int = Field(0, description="Total DDoS detections in last 24 hours")
     total_port_scan: int = Field(0, description="Total port scan detections in last 24 hours")
+    total_sql_injection: int = Field(0, description="Total SQL injection detections in last 24 hours")
     critical_count: int = Field(0, description="Number of CRITICAL severity threats")
     high_count: int = Field(0, description="Number of HIGH severity threats")
     medium_count: int = Field(0, description="Number of MEDIUM severity threats")
