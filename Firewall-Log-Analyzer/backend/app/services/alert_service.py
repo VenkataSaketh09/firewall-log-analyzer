@@ -7,6 +7,7 @@ from app.db.mongo import alerts_collection
 from app.services.brute_force_detection import detect_brute_force
 from app.services.ddos_detection import detect_ddos
 from app.services.port_scan_detection import detect_port_scan
+from app.services.sql_injection_detection import detect_sql_injection
 
 
 def _sanitize_for_mongodb(obj: Any) -> Any:
@@ -74,6 +75,12 @@ def compute_alert_docs(
         end_date=end_date,
     )[:max_per_type]
 
+    sql_injection = detect_sql_injection(
+        start_date=start_date,
+        end_date=end_date,
+        min_attempts=1,
+    )[:max_per_type]
+
     docs: List[Dict[str, Any]] = []
     now = datetime.utcnow()
 
@@ -134,6 +141,32 @@ def compute_alert_docs(
                 "last_seen": d.get("last_attempt"),
                 "count": int(d.get("total_attempts") or 0),
                 "description": f"Port scan detected: {int(d.get('unique_ports_attempted') or 0)} unique ports attempted",
+                "details": _sanitize_for_mongodb(d),
+                "computed_at": now,
+            }
+        )
+
+    for d in sql_injection:
+        detection_type = d.get("detection_type", "SQL_INJECTION")
+        injection_count = int(d.get("injection_attempts") or 0)
+        total_attempts = int(d.get("total_attempts") or 0)
+        
+        if injection_count > 0:
+            description = f"SQL injection attack: {injection_count} injection attempt(s), {total_attempts} total SQL-related attempts"
+        else:
+            description = f"SQL suspicious activity: {total_attempts} SQL-related attempts"
+        
+        docs.append(
+            {
+                "bucket_end": bucket_end,
+                "lookback_seconds": lookback_seconds,
+                "alert_type": "SQL_INJECTION",
+                "source_ip": d.get("source_ip") or "Unknown",
+                "severity": d.get("severity") or "LOW",
+                "first_seen": d.get("first_attempt"),
+                "last_seen": d.get("last_attempt"),
+                "count": total_attempts,
+                "description": description,
                 "details": _sanitize_for_mongodb(d),
                 "computed_at": now,
             }

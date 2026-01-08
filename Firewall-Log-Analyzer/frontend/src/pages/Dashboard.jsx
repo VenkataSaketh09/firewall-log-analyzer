@@ -199,7 +199,7 @@ const Dashboard = () => {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
         <div className="bg-white rounded-lg shadow-sm p-6">
           <h2 className="text-xl font-bold text-gray-900 mb-4">Threat Summary by Type</h2>
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <div className="text-center p-4 bg-red-50 rounded-lg">
               <p className="text-2xl font-bold text-red-600">{threats?.total_brute_force || 0}</p>
               <p className="text-sm text-gray-600 mt-1">Brute Force</p>
@@ -211,6 +211,10 @@ const Dashboard = () => {
             <div className="text-center p-4 bg-yellow-50 rounded-lg">
               <p className="text-2xl font-bold text-yellow-600">{threats?.total_port_scan || 0}</p>
               <p className="text-sm text-gray-600 mt-1">Port Scan</p>
+            </div>
+            <div className="text-center p-4 bg-purple-50 rounded-lg">
+              <p className="text-2xl font-bold text-purple-600">{threats?.total_sql_injection || 0}</p>
+              <p className="text-sm text-gray-600 mt-1">SQL Injection</p>
             </div>
           </div>
         </div>

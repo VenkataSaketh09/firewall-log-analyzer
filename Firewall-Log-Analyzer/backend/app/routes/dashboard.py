@@ -74,6 +74,7 @@ def get_dashboard_summary():
             total_brute_force=sum(1 for d in all_threats if d.get("alert_type") == "BRUTE_FORCE"),
             total_ddos=sum(1 for d in all_threats if d.get("alert_type") == "DDOS"),
             total_port_scan=sum(1 for d in all_threats if d.get("alert_type") == "PORT_SCAN"),
+            total_sql_injection=sum(1 for d in all_threats if d.get("alert_type") == "SQL_INJECTION"),
             critical_count=sum(1 for d in all_threats if (d.get("severity") == "CRITICAL")),
             high_count=sum(1 for d in all_threats if (d.get("severity") == "HIGH")),
             medium_count=sum(1 for d in all_threats if (d.get("severity") == "MEDIUM")),
