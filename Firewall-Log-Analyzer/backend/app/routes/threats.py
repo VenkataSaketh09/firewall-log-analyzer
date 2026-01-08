@@ -790,29 +790,6 @@ def get_port_scan_detections(
             source_ip=source_ip,
             protocol=protocol
         )
-        
-        # #region agent log
-        import json
-        with open('/home/saketh/firewall-log-analyzer/Firewall-Log-Analyzer/.cursor/debug.log', 'a') as f:
-            f.write(json.dumps({
-                "sessionId": "debug-session",
-                "runId": "run1",
-                "hypothesisId": "E",
-                "location": "threats.py:785",
-                "message": "Threats page: detect_port_scan returned",
-                "data": {
-                    "start_date": start_date.isoformat() if start_date else None,
-                    "end_date": end_date.isoformat() if end_date else None,
-                    "time_window_minutes": time_window_minutes,
-                    "unique_ports_threshold": unique_ports_threshold,
-                    "min_total_attempts": min_total_attempts,
-                    "source_ip_filter": source_ip,
-                    "total_detections": len(detections),
-                    "detections": [{"source_ip": d.get("source_ip"), "severity": d.get("severity"), "unique_ports_attempted": d.get("unique_ports_attempted"), "last_attempt": d.get("last_attempt").isoformat() if d.get("last_attempt") else None} for d in detections]
-                },
-                "timestamp": datetime.now(timezone.utc).timestamp() * 1000
-            }) + '\n')
-        # #endregion
 
         reputation_data = {}
         if include_reputation:
@@ -936,24 +913,6 @@ def get_port_scan_detections(
             start_date = end_date.replace(hour=0, minute=0, second=0, microsecond=0)
 
         detection_models = _filter_by_severity(detection_models, severity)
-        
-        # #region agent log
-        with open('/home/saketh/firewall-log-analyzer/Firewall-Log-Analyzer/.cursor/debug.log', 'a') as f:
-            f.write(json.dumps({
-                "sessionId": "debug-session",
-                "runId": "run1",
-                "hypothesisId": "F",
-                "location": "threats.py:908",
-                "message": "Threats page: after severity filter",
-                "data": {
-                    "severity_filter": severity,
-                    "total_before_filter": len([m for m in detection_models]),
-                    "total_after_filter": len(detection_models),
-                    "final_detections": [{"source_ip": m.source_ip, "severity": m.severity, "unique_ports_attempted": m.unique_ports_attempted} for m in detection_models]
-                },
-                "timestamp": datetime.now(timezone.utc).timestamp() * 1000
-            }) + '\n')
-        # #endregion
 
         response_model = PortScanDetectionsResponse(
             detections=detection_models,

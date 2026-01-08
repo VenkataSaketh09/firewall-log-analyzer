@@ -185,60 +185,8 @@ class MLService:
 
         df = pd.DataFrame([ml_input])
         feat_df = extractor.extract_features(df)
-        # #region agent log
-        try:
-            with open('/home/nulumohan/firewall-log-analyzer/Firewall-Log-Analyzer/.cursor/debug.log', 'a') as f:
-                f.write(json.dumps({
-                    "sessionId": "debug-session",
-                    "runId": "run1",
-                    "hypothesisId": "A",
-                    "location": "ml_service.py:_get_or_compute_feature_row:after_extract",
-                    "message": "after extract_features",
-                    "data": {
-                        "feat_df_columns": list(feat_df.columns)[:10],
-                        "has_time_since_last": "time_since_last" in feat_df.columns
-                    },
-                    "timestamp": int(__import__('time').time() * 1000)
-                }) + '\n')
-        except: pass
-        # #endregion
         X, _ = extractor.get_feature_matrix(feat_df)
-        # #region agent log
-        try:
-            with open('/home/nulumohan/firewall-log-analyzer/Firewall-Log-Analyzer/.cursor/debug.log', 'a') as f:
-                f.write(json.dumps({
-                    "sessionId": "debug-session",
-                    "runId": "run1",
-                    "hypothesisId": "A",
-                    "location": "ml_service.py:_get_or_compute_feature_row:after_get_matrix",
-                    "message": "after get_feature_matrix",
-                    "data": {
-                        "X_columns": list(X.columns)[:10],
-                        "has_time_since_last": "time_since_last" in X.columns,
-                        "X_shape": list(X.shape)
-                    },
-                    "timestamp": int(__import__('time').time() * 1000)
-                }) + '\n')
-        except: pass
-        # #endregion
         row = X.iloc[0].to_dict()
-        # #region agent log
-        try:
-            with open('/home/nulumohan/firewall-log-analyzer/Firewall-Log-Analyzer/.cursor/debug.log', 'a') as f:
-                f.write(json.dumps({
-                    "sessionId": "debug-session",
-                    "runId": "run1",
-                    "hypothesisId": "A",
-                    "location": "ml_service.py:_get_or_compute_feature_row:before_return",
-                    "message": "before returning row",
-                    "data": {
-                        "row_keys": list(row.keys())[:10],
-                        "has_time_since_last": "time_since_last" in row
-                    },
-                    "timestamp": int(__import__('time').time() * 1000)
-                }) + '\n')
-        except: pass
-        # #endregion
 
         if self.cache_features:
             cache_set_features(cache_key, row)
@@ -304,25 +252,6 @@ class MLService:
             # Drop time_since_last if present (should be excluded by get_feature_matrix, but handle cached data)
             if 'time_since_last' in X.columns:
                 X = X.drop(columns=['time_since_last'])
-            # #region agent log
-            import json
-            try:
-                with open('/home/nulumohan/firewall-log-analyzer/Firewall-Log-Analyzer/.cursor/debug.log', 'a') as f:
-                    f.write(json.dumps({
-                        "sessionId": "debug-session",
-                        "runId": "run1",
-                        "hypothesisId": "A",
-                        "location": "ml_service.py:score:before_transform",
-                        "message": "before scaler.transform",
-                        "data": {
-                            "X_columns": list(X.columns),
-                            "has_time_since_last": "time_since_last" in X.columns,
-                            "feature_row_keys": list(feature_row.keys())[:10]
-                        },
-                        "timestamp": int(__import__('time').time() * 1000)
-                    }) + '\n')
-            except: pass
-            # #endregion
             X_scaled = self._models.scaler.transform(X).to_numpy()
 
             anomaly_score = None

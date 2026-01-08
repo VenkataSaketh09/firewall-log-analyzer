@@ -338,25 +338,6 @@ class FeatureExtractor:
         Returns:
             Tuple of (feature_matrix, feature_names)
         """
-        # #region agent log
-        import json
-        try:
-            with open('/home/nulumohan/firewall-log-analyzer/Firewall-Log-Analyzer/.cursor/debug.log', 'a') as f:
-                f.write(json.dumps({
-                    "sessionId": "debug-session",
-                    "runId": "run1",
-                    "hypothesisId": "A",
-                    "location": "feature_extractor.py:get_feature_matrix:entry",
-                    "message": "get_feature_matrix called",
-                    "data": {
-                        "input_columns": list(df.columns),
-                        "has_time_since_last": "time_since_last" in df.columns
-                    },
-                    "timestamp": int(__import__('time').time() * 1000)
-                }) + '\n')
-        except: pass
-        # #endregion
-        
         # Select only feature columns (exclude original columns and labels)
         # Also exclude 'time_since_last' as it wasn't in the training set (model expects 47 features)
         feature_cols = [col for col in df.columns 
@@ -366,25 +347,6 @@ class FeatureExtractor:
                                      'extracted_ip', 'time_since_last']]  # Exclude extracted_ip and time_since_last
         
         X = df[feature_cols].copy()
-        
-        # #region agent log
-        try:
-            with open('/home/nulumohan/firewall-log-analyzer/Firewall-Log-Analyzer/.cursor/debug.log', 'a') as f:
-                f.write(json.dumps({
-                    "sessionId": "debug-session",
-                    "runId": "run1",
-                    "hypothesisId": "A",
-                    "location": "feature_extractor.py:get_feature_matrix:exit",
-                    "message": "get_feature_matrix returning",
-                    "data": {
-                        "output_columns": list(X.columns),
-                        "has_time_since_last": "time_since_last" in X.columns,
-                        "feature_count": len(feature_cols)
-                    },
-                    "timestamp": int(__import__('time').time() * 1000)
-                }) + '\n')
-        except: pass
-        # #endregion
         
         # Fill any remaining NaN values
         X = X.fillna(0)
