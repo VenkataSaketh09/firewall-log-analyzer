@@ -1,0 +1,173 @@
+@startuml Redis Log Caching Flow
+
+!theme plain
+skinparam sequenceArrowThickness 2
+skinparam roundcorner 20
+skinparam maxmessagesize 50
+
+title Redis Log Caching Flow (with Function Names)
+
+== Startup & Initialization ==
+
+participant "main.py" as Main
+participant "redis_cache.py\nRedisLogCache" as Cache
+participant "Redis Server" as Redis
+
+Main -> Cache: import redis_log_cache\nRedisLogCache.__init__() called
+activate Cache
+
+Cache -> Cache: __init__()\nos.getenv() for config
+Cache -> Redis: redis.Redis(host,port,db,password)
+activate Redis
+Redis --> Cache: client object
+Cache -> Redis: redis_client.ping()
+alt Success
+    Redis --> Cache: PONG
+    Cache -> Cache: self.enabled = True
+else Failed
+    Redis --> Cache: Exception
+    Cache -> Cache: self.enabled = False
+end
+deactivate Redis
+
+Main -> Main: startup_event()
+Main -> Cache: check redis_log_cache.enabled
+Cache --> Main: enabled status
+deactivate Cache
+
+== Log Ingestion Flow ==
+
+participant "log_ingestor.py" as Ingestor
+participant "/var/log/auth.log" as LogFile
+participant "redis_log_cache" as Cache
+participant "Redis" as Redis
+participant "WebSocket" as WS
+participant "MongoDB" as Mongo
+
+Ingestor -> Ingestor: start_log_ingestion()\nCreates threads
+Ingestor -> Ingestor: threading.Thread(target=ingest_auth_logs)
+
+loop For each log line
+    Ingestor -> Ingestor: ingest_auth_logs()
+    Ingestor -> Ingestor: follow(AUTH_LOG)\nGenerator function
+    Ingestor -> LogFile: f.readline()
+    LogFile --> Ingestor: raw line
+    
+    Ingestor -> Ingestor: Create log_message dict
+    
+    Ingestor -> Cache: redis_log_cache.add_log("auth", log_message)
+    activate Cache
+    Cache -> Cache: add_log() method
+    Cache -> Cache: _get_key("auth")
+    Cache --> Cache: "logs:source:auth"
+    Cache -> Cache: json.dumps(log_data)
+    Cache -> Redis: redis_client.lpush(key, log_json)
+    activate Redis
+    Redis --> Cache: OK
+    Cache -> Redis: redis_client.ltrim(key, 0, 4999)
+    Redis --> Cache: OK
+    Cache -> Redis: redis_client.expire(key, 3600)
+    Redis --> Cache: OK
+    Cache -> Redis: redis_client.lpush("logs:source:all", log_json)
+    Redis --> Cache: OK
+    Cache -> Redis: redis_client.ltrim("logs:source:all", 0, 4999)
+    Redis --> Cache: OK
+    Cache -> Redis: redis_client.expire("logs:source:all", 3600)
+    Redis --> Cache: OK
+    deactivate Redis
+    Cache --> Ingestor: True
+    deactivate Cache
+    
+    Ingestor -> WS: raw_log_broadcaster.broadcast("auth", line)
+    WS --> Ingestor: OK
+    
+    Ingestor -> Ingestor: parse_auth_log(line)
+    Ingestor -> Mongo: logs_collection.insert_one(parsed_log)
+    Mongo --> Ingestor: OK
+end
+
+== Get Cached Logs API ==
+
+participant "Frontend" as FE
+participant "routes/logs.py" as API
+participant "redis_log_cache" as Cache
+participant "Redis" as Redis
+
+FE -> API: GET /api/logs/cache/{log_source}
+API -> API: get_cached_logs_endpoint()
+API -> Cache: redis_log_cache.get_logs(log_source, limit)
+activate Cache
+Cache -> Cache: get_logs() method
+Cache -> Cache: _get_key(log_source)
+Cache -> Redis: redis_client.lrange(key, 0, limit-1)
+activate Redis
+Redis --> Cache: List[str] (JSON strings)
+deactivate Redis
+Cache -> Cache: logs_json.reverse()
+loop For each JSON
+    Cache -> Cache: json.loads(log_json)
+end
+Cache --> API: List[Dict]
+deactivate Cache
+API --> FE: HTTP 200 Response
+
+== Cache Statistics API ==
+
+FE -> API: GET /api/logs/cache/stats
+API -> API: get_cache_stats_endpoint()
+API -> Cache: redis_log_cache.get_cache_stats()
+activate Cache
+Cache -> Cache: get_cache_stats() method
+loop For each source
+    Cache -> Cache: _get_key(source)
+    Cache -> Redis: redis_client.llen(key)
+    activate Redis
+    Redis --> Cache: count
+    deactivate Redis
+    Cache -> Redis: redis_client.ttl(key)
+    activate Redis
+    Redis --> Cache: ttl
+    deactivate Redis
+end
+Cache --> API: stats dict
+deactivate Cache
+API --> FE: HTTP 200 Response
+
+== Clear Cache API ==
+
+FE -> API: DELETE /api/logs/cache?log_source=auth
+API -> API: clear_cache_endpoint()
+API -> Cache: redis_log_cache.clear_cache(log_source)
+activate Cache
+Cache -> Cache: clear_cache() method
+alt Specific source
+    Cache -> Cache: _get_key("auth")
+    Cache -> Redis: redis_client.delete(key)
+    activate Redis
+    Redis --> Cache: deleted count
+    deactivate Redis
+else All sources
+    Cache -> Redis: redis_client.keys("logs:source:*")
+    activate Redis
+    Redis --> Cache: List of keys
+    deactivate Redis
+    Cache -> Redis: redis_client.delete(*keys)
+    activate Redis
+    Redis --> Cache: deleted count
+    deactivate Redis
+    Cache -> Redis: redis_client.delete("logs:source:all")
+    activate Redis
+    Redis --> Cache: OK
+    deactivate Redis
+end
+Cache --> API: True/False
+deactivate Cache
+API --> FE: HTTP 200/500 Response
+
+note over Redis
+    **Redis Keys:** logs:source:{auth|ufw|kern|syslog|messages|all}
+    **Operations:** lpush, lrange, ltrim, llen, expire, ttl, delete, keys, ping
+    **Config:** MAX=5000, TTL=3600s
+end note
+
+@enduml

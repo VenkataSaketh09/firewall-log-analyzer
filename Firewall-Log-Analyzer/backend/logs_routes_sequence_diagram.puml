@@ -1,0 +1,488 @@
+@startuml Logs Routes Sequence Diagram
+
+!theme plain
+skinparam sequenceArrowThickness 2
+skinparam roundcorner 20
+skinparam maxmessagesize 60
+
+title Logs Routes - Complete Flow Diagram (routes/logs.py)
+
+== 1. POST /api/logs/ingest - Log Ingestion ==
+
+participant "Frontend/Client" as Client
+participant "routes/logs.py\n@router.post('/ingest')" as Route
+participant "auth_middleware.py\nverify_api_key()" as Auth
+participant "log_parser_service.py\nparse_multiple_logs()" as Parser
+participant "auth_log_parser.py\nparse_auth_log()" as AuthParser
+participant "ufw_log_parser.py\nparse_ufw_log()" as UfwParser
+participant "db/mongo.py\nlogs_collection" as MongoDB
+
+Client -> Route: POST /api/logs/ingest\nBody: {logs: [...], log_source: "auth.log"}\nHeader: X-API-Key
+activate Route
+
+Route -> Auth: Security(verify_api_key)\nExtract X-API-Key header
+activate Auth
+Auth -> Auth: Check API key\nos.getenv("INGESTION_API_KEY")
+alt Valid API Key
+    Auth --> Route: API key validated
+else Invalid API Key
+    Auth --> Route: HTTPException 401
+    Route --> Client: HTTP 401 Unauthorized
+    deactivate Auth
+    deactivate Route
+    return
+end
+deactivate Auth
+
+Route -> Route: Validate request\nif not request.logs: raise 400\nif len(request.logs) > 1000: raise 400
+note right of Route
+    Lines 50-55
+    Validation of input
+end note
+
+Route -> Parser: parse_multiple_logs(\n    request.logs,\n    request.log_source\n)
+activate Parser
+
+loop For each log line
+    Parser -> Parser: parse_log_line(line, log_source)
+    Parser -> Parser: Check log_source hint
+    alt log_source contains "auth"
+        Parser -> AuthParser: parse_auth_log(line)
+        activate AuthParser
+        AuthParser -> AuthParser: Extract timestamp\nExtract IP, port, username\nDetermine event_type & severity
+        AuthParser -> AuthParser: build_log()\nCreate log dictionary
+        AuthParser --> Parser: Parsed log dict
+        deactivate AuthParser
+    else log_source contains "ufw"
+        Parser -> UfwParser: parse_ufw_log(line)
+        activate UfwParser
+        UfwParser -> UfwParser: Extract SRC, DST, PROTO\nExtract ports\nDetermine severity
+        UfwParser -> UfwParser: build_log()
+        UfwParser --> Parser: Parsed log dict
+        deactivate UfwParser
+    else Other parsers (iptables, syslog, sql)
+        note right of Parser
+            Tries content-based detection
+            Falls back to syslog parser
+        end note
+    end
+    alt Parsed successfully
+        Parser -> Parser: Append to parsed_logs list
+    else Failed to parse
+        Parser -> Parser: Skip (returns None)
+    end
+end
+
+Parser --> Route: List[Dict] parsed_logs
+deactivate Parser
+
+alt No logs parsed
+    Route -> Route: Return LogIngestionResponse\nsuccess=False, ingested_count=0
+    Route --> Client: HTTP 200\n{success: false, ingested_count: 0}
+    deactivate Route
+    return
+end
+
+Route -> MongoDB: logs_collection.insert_many(parsed_logs)
+activate MongoDB
+MongoDB --> Route: Insert result
+deactivate MongoDB
+
+Route -> Route: Calculate failed_count\nlen(request.logs) - len(parsed_logs)
+Route -> Route: Return LogIngestionResponse\n{success: true, ingested_count, failed_count}
+Route --> Client: HTTP 200\n{success: true, ingested_count: N, failed_count: M}
+deactivate Route
+
+== 2. GET /api/logs - Get Logs with Pagination ==
+
+participant "routes/logs.py\n@router.get('')" as GetRoute
+participant "log_queries.py\nget_logs()" as QueryService
+participant "log_queries.py\nbuild_log_query()" as BuildQuery
+participant "virustotal_service.py\nget_multiple_ip_reputations()" as VirusTotal
+participant "schemas/log_schema.py\nLogResponse" as Schema
+participant "db/mongo.py\nlogs_collection" as MongoDB2
+
+Client -> GetRoute: GET /api/logs?page=1&page_size=50\n&severity=HIGH&source_ip=192.168.1.1\n&include_reputation=true
+activate GetRoute
+
+GetRoute -> GetRoute: FastAPI extracts query params\n(page, page_size, severity, etc.)
+note right of GetRoute
+    Lines 88-104
+    Query parameters extracted
+    and validated by FastAPI
+end note
+
+GetRoute -> QueryService: get_logs(\n    page, page_size,\n    source_ip, severity,\n    event_type, ...\n)
+activate QueryService
+
+QueryService -> BuildQuery: build_log_query(\n    source_ip, severity,\n    event_type, ...\n)
+activate BuildQuery
+BuildQuery -> BuildQuery: Build MongoDB query dict\n{source_ip: "...", severity: "HIGH", ...}
+note right of BuildQuery
+    Lines 7-53 in log_queries.py
+    Constructs MongoDB query
+    from filter parameters
+end note
+BuildQuery --> QueryService: MongoDB query dict
+deactivate BuildQuery
+
+QueryService -> QueryService: Calculate skip = (page - 1) * page_size
+QueryService -> MongoDB2: logs_collection.count_documents(query)
+activate MongoDB2
+MongoDB2 --> QueryService: total count
+deactivate MongoDB2
+
+alt sort_by == "severity"
+    QueryService -> QueryService: Build aggregation pipeline\nAdd severity_order field
+    QueryService -> MongoDB2: logs_collection.aggregate(pipeline)\n$match, $addFields, $sort, $skip, $limit
+    activate MongoDB2
+    MongoDB2 --> QueryService: List of log documents
+    deactivate MongoDB2
+else Other sort fields
+    QueryService -> QueryService: Build sort criteria
+    QueryService -> MongoDB2: logs_collection.find(query)\n.sort(sort_criteria)\n.skip(skip).limit(page_size)
+    activate MongoDB2
+    MongoDB2 --> QueryService: Cursor → List of logs
+    deactivate MongoDB2
+end
+
+QueryService -> QueryService: Convert ObjectId to string\nlog["_id"] = str(log["_id"])
+QueryService -> QueryService: Calculate total_pages
+QueryService --> GetRoute: {logs: [...], total, page, page_size, total_pages}
+deactivate QueryService
+
+alt include_reputation == true
+    GetRoute -> GetRoute: Extract unique IPs\nlist(set(log.get("source_ip")...))
+    GetRoute -> VirusTotal: get_multiple_ip_reputations(unique_ips)
+    activate VirusTotal
+    VirusTotal -> VirusTotal: Query VirusTotal API\n(or cache)
+    VirusTotal --> GetRoute: Dict[ip, reputation_data]
+    deactivate VirusTotal
+else No reputation requested
+    GetRoute -> GetRoute: reputation_data = {}
+end
+
+GetRoute -> GetRoute: Loop through logs\nConvert to LogResponse
+loop For each log
+    GetRoute -> GetRoute: Ensure required fields\nSet defaults if missing
+    note right of GetRoute
+        Lines 136-147
+        Default values for missing fields:
+        source_ip = "Unknown"
+        severity = "LOW"
+        etc.
+    end note
+    
+    alt include_reputation and IP in reputation_data
+        GetRoute -> GetRoute: log_dict["virustotal"] = reputation
+        GetRoute -> GetRoute: enhance_severity_with_reputation()
+        note right of GetRoute
+            Lines 157-159
+            Enhance severity if
+            IP is detected as malicious
+        end note
+    end
+    
+    GetRoute -> Schema: LogResponse(**log_dict)
+    activate Schema
+    Schema -> Schema: Pydantic validation
+    alt Validation passes
+        Schema --> GetRoute: LogResponse object
+    else Validation fails
+        Schema --> GetRoute: ValidationError
+        GetRoute -> GetRoute: continue (skip log)
+    end
+    deactivate Schema
+end
+
+GetRoute -> GetRoute: LogsResponse(\n    logs=log_responses,\n    total, page, page_size, total_pages\n)
+GetRoute --> Client: HTTP 200\n{logs: [...], total, page, page_size, total_pages}
+deactivate GetRoute
+
+== 3. GET /api/logs/{log_id} - Get Single Log ==
+
+participant "routes/logs.py\n@router.get('/{log_id}')" as SingleRoute
+participant "log_queries.py\nget_log_by_id()" as GetById
+participant "virustotal_service.py\nget_ip_reputation()" as VTService
+participant "db/mongo.py\nlogs_collection" as MongoDB3
+
+Client -> SingleRoute: GET /api/logs/{log_id}?include_reputation=true
+activate SingleRoute
+
+SingleRoute -> GetById: get_log_by_id(log_id)
+activate GetById
+GetById -> GetById: Convert log_id to ObjectId
+GetById -> MongoDB3: logs_collection.find_one({"_id": ObjectId(log_id)})
+activate MongoDB3
+alt Log found
+    MongoDB3 --> GetById: Log document
+else Log not found
+    MongoDB3 --> GetById: None
+    GetById --> SingleRoute: None
+    deactivate GetById
+    SingleRoute -> SingleRoute: raise HTTPException 404
+    SingleRoute --> Client: HTTP 404 Not Found
+    deactivate SingleRoute
+    return
+end
+deactivate MongoDB3
+GetById -> GetById: Convert ObjectId to string
+GetById --> SingleRoute: Log dict
+deactivate GetById
+
+SingleRoute -> SingleRoute: Ensure required fields\nSet defaults (lines 464-475)
+
+alt include_reputation == true
+    SingleRoute -> SingleRoute: ip = log_dict.get("source_ip")
+    SingleRoute -> VTService: get_ip_reputation(ip)
+    activate VTService
+    VTService -> VTService: Query VirusTotal API\n(or cache)
+    VTService --> SingleRoute: Reputation dict
+    deactivate VTService
+    
+    alt Reputation found
+        SingleRoute -> SingleRoute: log_dict["virustotal"] = reputation
+        SingleRoute -> SingleRoute: enhance_severity_with_reputation()
+    end
+end
+
+SingleRoute -> Schema: LogResponse(**log_dict)
+activate Schema
+Schema -> Schema: Pydantic validation
+Schema --> SingleRoute: LogResponse object
+deactivate Schema
+
+SingleRoute --> Client: HTTP 200\nLogResponse object
+deactivate SingleRoute
+
+== 4. GET /api/logs/export - Export Logs (CSV/JSON) ==
+
+participant "routes/logs.py\n@router.get('/export')" as ExportRoute
+participant "log_queries.py\nbuild_log_query()" as QueryBuilder
+participant "db/mongo.py\nlogs_collection" as MongoDB4
+participant "io.StringIO" as StringIO
+
+Client -> ExportRoute: GET /api/logs/export?format=csv\n&severity=HIGH&sort_by=timestamp
+activate ExportRoute
+
+ExportRoute -> ExportRoute: Extract query params\n(format, filters, sort_by, sort_order)
+ExportRoute -> QueryBuilder: build_log_query(filters...)
+activate QueryBuilder
+QueryBuilder --> ExportRoute: MongoDB query dict
+deactivate QueryBuilder
+
+ExportRoute -> ExportRoute: Determine sort method
+alt sort_by == "severity"
+    ExportRoute -> ExportRoute: Build aggregation pipeline\n$match, $addFields, $sort
+    ExportRoute -> MongoDB4: logs_collection.aggregate(pipeline)
+    activate MongoDB4
+    MongoDB4 --> ExportRoute: All matching logs (no limit)
+    deactivate MongoDB4
+else Other sort fields
+    ExportRoute -> ExportRoute: Build sort criteria
+    ExportRoute -> MongoDB4: logs_collection.find(query).sort(sort_criteria)
+    activate MongoDB4
+    MongoDB4 --> ExportRoute: All matching logs
+    deactivate MongoDB4
+end
+
+ExportRoute -> ExportRoute: Convert ObjectId to string\nFormat timestamps
+loop For each log
+    ExportRoute -> ExportRoute: log["_id"] = str(log["_id"])
+    ExportRoute -> ExportRoute: timestamp.isoformat()
+end
+
+alt format == "csv"
+    ExportRoute -> StringIO: io.StringIO()
+    activate StringIO
+    ExportRoute -> ExportRoute: csv.writer(output)
+    ExportRoute -> ExportRoute: writer.writerow(headers)
+    loop For each log
+        ExportRoute -> ExportRoute: writer.writerow([\n    id, timestamp, source_ip, ...\n])
+    end
+    ExportRoute -> StringIO: output.getvalue()
+    StringIO --> ExportRoute: CSV content (string)
+    deactivate StringIO
+    ExportRoute -> ExportRoute: Response(\n    content=csv_bytes,\n    media_type="text/csv",\n    headers={"Content-Disposition": "attachment; filename=..."}\n)
+else format == "json"
+    ExportRoute -> ExportRoute: json.dumps(logs, indent=2, default=str)
+    ExportRoute -> ExportRoute: Response(\n    content=json_bytes,\n    media_type="application/json",\n    headers={"Content-Disposition": "attachment; filename=..."}\n)
+end
+
+ExportRoute --> Client: HTTP 200\nFile download (CSV/JSON)
+deactivate ExportRoute
+
+== 5. GET /api/logs/export/pdf - Export Logs to PDF ==
+
+participant "routes/logs.py\n@router.get('/export/pdf')" as PdfRoute
+participant "log_queries.py\nbuild_log_query()" as QueryBuilder2
+participant "export_service.py\nexport_logs_to_pdf()" as PdfService
+participant "db/mongo.py\nlogs_collection" as MongoDB5
+
+Client -> PdfRoute: GET /api/logs/export/pdf?limit=1000\n&severity=HIGH
+activate PdfRoute
+
+PdfRoute -> PdfRoute: Extract query params\n(limit, filters, sort_by, sort_order)
+PdfRoute -> QueryBuilder2: build_log_query(filters...)
+activate QueryBuilder2
+QueryBuilder2 --> PdfRoute: MongoDB query dict
+deactivate QueryBuilder2
+
+PdfRoute -> PdfRoute: Determine sort method\n(same as export endpoint)
+PdfRoute -> MongoDB5: Query logs (with limit)
+activate MongoDB5
+MongoDB5 --> PdfRoute: List of log documents (up to limit)
+deactivate MongoDB5
+
+PdfRoute -> PdfRoute: Normalize logs\nConvert ObjectId to string\nFormat timestamps
+loop For each log
+    PdfRoute -> PdfRoute: d["_id"] = str(d.get("_id"))
+    PdfRoute -> PdfRoute: timestamp.isoformat()
+end
+
+PdfRoute -> PdfService: export_logs_to_pdf(normalized_logs, title)
+activate PdfService
+PdfService -> PdfService: Generate PDF using reportlab\nColor-code rows by severity
+PdfService --> PdfRoute: PDF bytes
+deactivate PdfService
+
+PdfRoute -> PdfRoute: Response(\n    content=pdf_bytes,\n    media_type="application/pdf",\n    headers={"Content-Disposition": "attachment; filename=..."}\n)
+PdfRoute --> Client: HTTP 200\nPDF file download
+deactivate PdfRoute
+
+== 6. GET /api/logs/stats/* - Statistics Endpoints ==
+
+participant "routes/logs.py\n@router.get('/stats/summary')" as StatsRoute
+participant "log_queries.py\nget_statistics()" as StatsService
+participant "log_queries.py\nget_top_ips()" as TopIPsService
+participant "log_queries.py\nget_top_ports()" as TopPortsService
+
+Client -> StatsRoute: GET /api/logs/stats/summary\n?start_date=...&end_date=...
+activate StatsRoute
+StatsRoute -> StatsService: get_statistics(start_date, end_date)
+activate StatsService
+StatsService -> MongoDB4: Aggregate queries\ncount_documents, group by severity,\ngroup by event_type, etc.
+activate MongoDB4
+MongoDB4 --> StatsService: Aggregated statistics
+deactivate MongoDB4
+StatsService --> StatsRoute: Stats dict
+deactivate StatsService
+StatsRoute -> Schema: StatsResponse(**stats)
+activate Schema
+Schema --> StatsRoute: StatsResponse object
+deactivate Schema
+StatsRoute --> Client: HTTP 200\n{total_logs, severity_counts, event_type_counts, ...}
+deactivate StatsRoute
+
+Client -> StatsRoute: GET /api/logs/stats/top-ips?limit=10\n&include_reputation=true
+StatsRoute -> TopIPsService: get_top_ips(limit, start_date, end_date)
+activate TopIPsService
+TopIPsService -> MongoDB4: Aggregate by source_ip\nCount and group by severity
+activate MongoDB4
+MongoDB4 --> TopIPsService: Top IPs with counts
+deactivate MongoDB4
+TopIPsService --> StatsRoute: List of top IPs
+deactivate TopIPsService
+
+alt include_reputation
+    StatsRoute -> VirusTotal: get_multiple_ip_reputations(ips)
+    activate VirusTotal
+    VirusTotal --> StatsRoute: Reputation data
+    deactivate VirusTotal
+    StatsRoute -> StatsRoute: Add reputation to each IP
+end
+
+StatsRoute -> StatsRoute: Convert to TopIPResponse list
+StatsRoute --> Client: HTTP 200\n[{source_ip, count, severity_breakdown, virustotal}, ...]
+
+Client -> StatsRoute: GET /api/logs/stats/top-ports?limit=10
+StatsRoute -> TopPortsService: get_top_ports(limit, start_date, end_date)
+activate TopPortsService
+TopPortsService -> MongoDB4: Aggregate by destination_port\nCount and group by protocol
+activate MongoDB4
+MongoDB4 --> TopPortsService: Top ports with counts
+deactivate MongoDB4
+TopPortsService --> StatsRoute: List of top ports
+deactivate TopPortsService
+StatsRoute -> StatsRoute: Convert to TopPortResponse list
+StatsRoute --> Client: HTTP 200\n[{port, count, protocol}, ...]
+
+== 7. GET /api/logs/cache/* - Redis Cache Endpoints ==
+
+participant "routes/logs.py\n@router.get('/cache/{log_source}')" as CacheRoute
+participant "redis_cache.py\nredis_log_cache" as RedisCache
+participant "Redis Server" as Redis
+
+Client -> CacheRoute: GET /api/logs/cache/auth?limit=100
+activate CacheRoute
+CacheRoute -> CacheRoute: Validate log_source\n["auth", "ufw", "kern", "syslog", "messages", "all"]
+alt Invalid log_source
+    CacheRoute -> CacheRoute: raise HTTPException 400
+    CacheRoute --> Client: HTTP 400 Bad Request
+    deactivate CacheRoute
+    return
+end
+
+CacheRoute -> RedisCache: redis_log_cache.get_logs(log_source, limit)
+activate RedisCache
+RedisCache -> RedisCache: _get_key(log_source)
+RedisCache --> RedisCache: "logs:source:auth"
+RedisCache -> Redis: redis_client.lrange(key, 0, limit-1)
+activate Redis
+Redis --> RedisCache: List[str] (JSON strings)
+deactivate Redis
+RedisCache -> RedisCache: Reverse list\njson.loads() for each
+RedisCache --> CacheRoute: List[Dict] cached_logs
+deactivate RedisCache
+
+CacheRoute -> CacheRoute: Return {\n    log_source, count, logs, cache_enabled\n}
+CacheRoute --> Client: HTTP 200\n{cached logs}
+deactivate CacheRoute
+
+Client -> CacheRoute: GET /api/logs/cache/stats
+CacheRoute -> RedisCache: redis_log_cache.get_cache_stats()
+activate RedisCache
+loop For each source
+    RedisCache -> Redis: redis_client.llen(key)
+    activate Redis
+    Redis --> RedisCache: count
+    deactivate Redis
+    RedisCache -> Redis: redis_client.ttl(key)
+    activate Redis
+    Redis --> RedisCache: ttl
+    deactivate Redis
+end
+RedisCache --> CacheRoute: Stats dict
+deactivate RedisCache
+CacheRoute --> Client: HTTP 200\n{cache statistics}
+
+Client -> CacheRoute: DELETE /api/logs/cache?log_source=auth
+CacheRoute -> RedisCache: redis_log_cache.clear_cache(log_source)
+activate RedisCache
+alt Specific source
+    RedisCache -> Redis: redis_client.delete(key)
+    activate Redis
+    Redis --> RedisCache: deleted count
+    deactivate Redis
+else All sources (log_source=None)
+    RedisCache -> Redis: redis_client.keys("logs:source:*")
+    activate Redis
+    Redis --> RedisCache: List of keys
+    deactivate Redis
+    RedisCache -> Redis: redis_client.delete(*keys)
+    activate Redis
+    Redis --> RedisCache: deleted count
+    deactivate Redis
+end
+RedisCache --> CacheRoute: True/False
+deactivate RedisCache
+CacheRoute --> Client: HTTP 200\n{success: true, message: "Cache cleared"}
+deactivate CacheRoute
+
+note over Redis
+    **Cache Keys:** logs:source:{auth|ufw|kern|syslog|messages|all}
+    **Operations:** lpush, lrange, ltrim, llen, ttl, delete, keys
+    **Config:** MAX=5000, TTL=3600s
+end note
+
+@enduml

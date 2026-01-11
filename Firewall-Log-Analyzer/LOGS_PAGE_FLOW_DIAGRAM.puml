@@ -1,0 +1,478 @@
+@startuml Logs Page Complete Flow
+
+!theme plain
+skinparam sequenceArrowThickness 2
+skinparam roundcorner 20
+skinparam maxmessagesize 60
+
+title Logs Page - Complete Flow Diagram (Frontend + Backend)
+
+== 1. Page Load - Initial Log Fetch ==
+
+participant "User Browser" as Browser
+participant "pages/Logs.jsx\nLogs Component" as LogsPage
+participant "hooks/useLogsQueries.js\nuseLogs()" as UseLogsHook
+participant "services/logsService.js\ngetLogs()" as LogsService
+participant "services/api.js\naxios instance" as API
+participant "routes/logs.py\n@router.get('')" as LogsRoute
+participant "services/log_queries.py\nget_logs()" as QueryService
+participant "db/mongo.py\nlogs_collection" as MongoDB
+
+Browser -> LogsPage: Navigate to /logs
+activate LogsPage
+
+LogsPage -> LogsPage: Initialize state\n(pagination, filters, sortBy, sortOrder)
+note right of LogsPage
+    Lines 44-60 in Logs.jsx
+    - pagination: {page: 1, page_size: 50}
+    - filters: {...}
+    - sortBy: 'timestamp'
+    - sortOrder: 'desc'
+end note
+
+LogsPage -> UseLogsHook: useLogs(params)
+activate UseLogsHook
+note right of UseLogsHook
+    Lines 16-90 in useLogsQueries.js
+    Build queryKey from params
+    React Query hook
+end note
+
+UseLogsHook -> LogsService: getLogs(queryParams)
+activate LogsService
+note right of LogsService
+    Lines 6-48 in logsService.js
+    Build query parameters object
+    Convert port to destination_port
+end note
+
+LogsService -> API: api.get('/api/logs', {params: queryParams})
+activate API
+API -> API: Add headers\n(Content-Type, etc.)
+API -> LogsRoute: GET /api/logs?page=1&page_size=50\n&sort_by=timestamp&sort_order=desc
+deactivate API
+activate LogsRoute
+
+LogsRoute -> LogsRoute: Extract query parameters\nFastAPI validation (lines 88-104)
+LogsRoute -> QueryService: get_logs(\n    page, page_size,\n    sort_by, sort_order,\n    filters...\n)
+activate QueryService
+
+QueryService -> QueryService: build_log_query(filters)
+note right of QueryService
+    Lines 7-53 in log_queries.py
+    Build MongoDB query dict
+end note
+
+QueryService -> QueryService: Calculate skip = (page - 1) * page_size
+QueryService -> MongoDB: logs_collection.count_documents(query)
+activate MongoDB
+MongoDB --> QueryService: total count
+deactivate MongoDB
+
+alt sort_by == "severity"
+    QueryService -> QueryService: Build aggregation pipeline
+    QueryService -> MongoDB: logs_collection.aggregate(pipeline)
+    activate MongoDB
+    MongoDB --> QueryService: List of logs
+    deactivate MongoDB
+else Other sort fields
+    QueryService -> MongoDB: logs_collection.find(query)\n.sort(sort_criteria).skip(skip).limit(page_size)
+    activate MongoDB
+    MongoDB --> QueryService: Cursor → List of logs
+    deactivate MongoDB
+end
+
+QueryService -> QueryService: Convert ObjectId to string\nlog["_id"] = str(log["_id"])
+QueryService -> QueryService: Calculate total_pages
+QueryService --> LogsRoute: {logs: [...], total, page, page_size, total_pages}
+deactivate QueryService
+
+LogsRoute -> LogsRoute: Convert logs to LogResponse models
+LogsRoute -> LogsRoute: Ensure required fields\nSet defaults if missing
+LogsRoute -> LogsRoute: LogsResponse(\n    logs=log_responses,\n    total, page, page_size, total_pages\n)
+LogsRoute --> API: HTTP 200 JSON Response
+deactivate LogsRoute
+
+API --> LogsService: response.data
+deactivate API
+LogsService --> UseLogsHook: {logs: [...], total, page, ...}
+deactivate LogsService
+
+UseLogsHook --> LogsPage: React Query result
+deactivate UseLogsHook
+
+LogsPage -> LogsPage: Extract data.logs\nNormalize id field (lines 85-90)
+LogsPage -> LogsPage: Render LogsTable component
+LogsPage --> Browser: Display logs table
+deactivate LogsPage
+
+== 2. Filtering Logs ==
+
+participant "components/logs/LogFilterPanel.jsx\nLogFilterPanel" as FilterPanel
+
+Browser -> FilterPanel: User changes filter\n(e.g., severity=HIGH)
+activate FilterPanel
+FilterPanel -> FilterPanel: onFilterChange('severity', 'HIGH')
+FilterPanel --> LogsPage: handleFilterChange('severity', 'HIGH')
+deactivate FilterPanel
+
+LogsPage -> LogsPage: setFilters(prev => {...prev, severity: 'HIGH'})
+LogsPage -> LogsPage: React Query detects dependency change
+note right of LogsPage
+    Lines 63-77 in Logs.jsx
+    useLogs hook refetches automatically
+    when filters change
+end note
+
+LogsPage -> UseLogsHook: useLogs(...new filters)
+activate UseLogsHook
+UseLogsHook -> LogsService: getLogs(...new queryParams)
+activate LogsService
+LogsService -> API: GET /api/logs?severity=HIGH&...
+activate API
+API -> LogsRoute: Request with new filters
+activate LogsRoute
+LogsRoute -> QueryService: get_logs(...with severity filter)
+activate QueryService
+QueryService -> QueryService: build_log_query(severity='HIGH')
+QueryService -> MongoDB: Query with severity filter
+activate MongoDB
+MongoDB --> QueryService: Filtered logs
+deactivate MongoDB
+QueryService --> LogsRoute: Filtered results
+deactivate QueryService
+LogsRoute --> API: HTTP 200
+deactivate LogsRoute
+API --> LogsService: Filtered data
+deactivate API
+LogsService --> UseLogsHook: Filtered logs
+deactivate LogsService
+UseLogsHook --> LogsPage: Updated logs
+deactivate UseLogsHook
+
+LogsPage -> LogsPage: Re-render with filtered logs
+LogsPage --> Browser: Display filtered logs
+deactivate LogsPage
+
+== 3. Sorting Logs ==
+
+Browser -> LogsPage: User clicks column header\n(e.g., Source IP)
+activate LogsPage
+LogsPage -> LogsPage: handleSort('source_ip', 'asc')
+note right of LogsPage
+    Lines 203-206 in Logs.jsx
+    setSortBy('source_ip')
+    setSortOrder('asc')
+end note
+
+LogsPage -> LogsPage: React Query refetches
+LogsPage -> UseLogsHook: useLogs(...sort_by='source_ip', sort_order='asc')
+activate UseLogsHook
+UseLogsHook -> LogsService: getLogs(...sort_by='source_ip')
+activate LogsService
+LogsService -> API: GET /api/logs?sort_by=source_ip&sort_order=asc
+activate API
+API -> LogsRoute: Request with sort params
+activate LogsRoute
+LogsRoute -> QueryService: get_logs(...sort_by='source_ip')
+activate QueryService
+QueryService -> QueryService: Build sort criteria\n('source_ip', ASCENDING)
+QueryService -> MongoDB: find(query).sort([('source_ip', ASCENDING)])
+activate MongoDB
+MongoDB --> QueryService: Sorted logs
+deactivate MongoDB
+QueryService --> LogsRoute: Sorted results
+deactivate QueryService
+LogsRoute --> API: HTTP 200
+deactivate LogsRoute
+API --> LogsService: Sorted data
+deactivate API
+LogsService --> UseLogsHook: Sorted logs
+deactivate LogsService
+UseLogsHook --> LogsPage: Updated sorted logs
+deactivate UseLogsHook
+
+LogsPage -> LogsPage: Update LogsTable\nShow sort indicator
+LogsPage --> Browser: Display sorted logs
+deactivate LogsPage
+
+== 4. Pagination ==
+
+Browser -> LogsPage: User clicks "Next" button
+activate LogsPage
+LogsPage -> LogsPage: handlePageChange(page + 1)
+note right of LogsPage
+    Lines 213-215 in Logs.jsx
+    setPagination(prev => {...prev, page: newPage})
+end note
+
+LogsPage -> UseLogsHook: useLogs(...page=2)
+activate UseLogsHook
+UseLogsHook -> LogsService: getLogs(...page=2)
+activate LogsService
+LogsService -> API: GET /api/logs?page=2&page_size=50
+activate API
+API -> LogsRoute: Request for page 2
+activate LogsRoute
+LogsRoute -> QueryService: get_logs(page=2, page_size=50)
+activate QueryService
+QueryService -> QueryService: skip = (2-1) * 50 = 50
+QueryService -> MongoDB: find(query).skip(50).limit(50)
+activate MongoDB
+MongoDB --> QueryService: Next 50 logs
+deactivate MongoDB
+QueryService --> LogsRoute: Page 2 results
+deactivate QueryService
+LogsRoute --> API: HTTP 200
+deactivate LogsRoute
+API --> LogsService: Page 2 data
+deactivate API
+LogsService --> UseLogsHook: Page 2 logs
+deactivate LogsService
+UseLogsHook --> LogsPage: Page 2 results
+deactivate UseLogsHook
+
+LogsPage -> LogsPage: Update pagination UI
+LogsPage --> Browser: Display page 2
+deactivate LogsPage
+
+== 5. View Log Details ==
+
+participant "components/logs/LogDetailsModal.jsx\nLogDetailsModal" as DetailsModal
+participant "services/mlService.js\npredictWithML()" as MLService
+participant "routes/ml.py\n@router.post('/predict')" as MLRoute
+
+Browser -> LogsPage: User clicks "View" on log row
+activate LogsPage
+LogsPage -> LogsPage: handleViewDetails(log)
+note right of LogsPage
+    Lines 208-211 in Logs.jsx
+    setSelectedLog(log)
+    setIsModalOpen(true)
+end note
+
+LogsPage -> DetailsModal: Render LogDetailsModal\nprops: {log, isOpen: true}
+activate DetailsModal
+DetailsModal -> DetailsModal: Display log details
+DetailsModal --> Browser: Show modal with log info
+deactivate DetailsModal
+
+Browser -> DetailsModal: User clicks "ML Analyze" button
+activate DetailsModal
+DetailsModal -> DetailsModal: Infer threat_type_hint from event_type
+note right of DetailsModal
+    Lines 62-75 in LogDetailsModal.jsx
+    Analyze event_type to determine
+    threat_type_hint
+end note
+
+DetailsModal -> MLService: predictWithML({\n    raw_log, timestamp,\n    log_source, threat_type_hint\n})
+activate MLService
+MLService -> API: POST /api/ml/predict\n{raw_log, timestamp, log_source, ...}
+activate API
+API -> MLRoute: ML prediction request
+activate MLRoute
+MLRoute -> MLRoute: Extract request body
+MLRoute -> MLRoute: ml_service.predict(...)
+note right of MLRoute
+    Calls ML service wrapper
+    Returns prediction with risk score,
+    anomaly score, confidence
+end note
+MLRoute --> API: HTTP 200 {prediction, risk_score, ...}
+deactivate MLRoute
+API --> MLService: ML prediction result
+deactivate API
+MLService --> DetailsModal: ML analysis result
+deactivate MLService
+
+DetailsModal -> DetailsModal: Display ML results\n(setMlResult)
+DetailsModal --> Browser: Show ML analysis
+deactivate DetailsModal
+
+Browser -> DetailsModal: User clicks "X" to close
+DetailsModal -> DetailsModal: onClose()
+DetailsModal --> LogsPage: setIsModalOpen(false)
+LogsPage -> LogsPage: Close modal
+LogsPage --> Browser: Hide modal
+deactivate LogsPage
+
+== 6. Export Logs ==
+
+participant "hooks/useLogsQueries.js\nuseExportLogsPDF()" as ExportHook
+
+Browser -> LogsPage: User clicks "Export" → "Export as PDF"
+activate LogsPage
+LogsPage -> LogsPage: handleExport('pdf')
+note right of LogsPage
+    Lines 255-288 in Logs.jsx
+    Build export params from filters
+end note
+
+LogsPage -> ExportHook: exportPDF.mutateAsync(params)
+activate ExportHook
+ExportHook -> LogsService: exportLogsPDF(params)
+activate LogsService
+LogsService -> API: GET /api/logs/export/pdf?limit=1000&...
+activate API
+API -> LogsRoute: Export PDF request
+activate LogsRoute
+LogsRoute -> LogsRoute: @router.get('/export/pdf')
+LogsRoute -> QueryService: build_log_query(...filters)
+activate QueryService
+QueryService --> LogsRoute: MongoDB query
+deactivate QueryService
+
+LogsRoute -> MongoDB: Query logs (with limit)
+activate MongoDB
+MongoDB --> LogsRoute: List of logs
+deactivate MongoDB
+
+LogsRoute -> LogsRoute: Normalize logs\nConvert ObjectId, format timestamps
+LogsRoute -> LogsRoute: export_service.export_logs_to_pdf(normalized_logs)
+activate LogsRoute
+note right of LogsRoute
+    Lines 393 in logs.py
+    Calls export_service.py
+    Generate PDF with reportlab
+    Color-code rows by severity
+end note
+LogsRoute -> LogsRoute: export_logs_to_pdf()\nGenerates PDF bytes
+LogsRoute --> LogsRoute: PDF bytes
+deactivate LogsRoute
+
+LogsRoute -> LogsRoute: Response(\n    content=pdf_bytes,\n    media_type="application/pdf",\n    headers={"Content-Disposition": "attachment; filename=..."}\n)
+LogsRoute --> API: HTTP 200 PDF file
+deactivate LogsRoute
+
+API --> LogsService: PDF blob
+deactivate API
+LogsService --> ExportHook: PDF blob
+deactivate LogsService
+ExportHook --> LogsPage: PDF blob
+deactivate ExportHook
+
+LogsPage -> LogsPage: downloadBlob(blob, filename)
+note right of LogsPage
+    Lines 244-253 in Logs.jsx
+    Create download link
+    Trigger download
+end note
+LogsPage --> Browser: Download PDF file
+deactivate LogsPage
+
+== 7. Live Monitoring Mode ==
+
+participant "hooks/useRawLogWebSocket.js\nuseRawLogWebSocket()" as WSHook
+participant "routes/websocket.py\n@router.websocket('/ws/logs/live')" as WebSocketRoute
+participant "services/raw_log_broadcaster.py\nraw_log_broadcaster" as Broadcaster
+participant "components/logs/RawLogViewer.jsx\nRawLogViewer" as RawViewer
+
+Browser -> LogsPage: User clicks "Live Monitoring" button
+activate LogsPage
+LogsPage -> LogsPage: handleToggleLiveMode()
+note right of LogsPage
+    Lines 158-160 in Logs.jsx
+    setLiveMode(true)
+end note
+
+LogsPage -> LogsPage: useEffect detects liveMode change
+LogsPage -> WSHook: connect()
+activate WSHook
+
+WSHook -> WSHook: new WebSocket(WS_URL)
+note right of WSHook
+    Lines 19-35 in useRawLogWebSocket.js
+    WS_URL = 'ws://localhost:8000/ws/logs/live'
+end note
+
+WSHook -> WebSocketRoute: WebSocket connection
+activate WebSocketRoute
+WebSocketRoute -> WebSocketRoute: await websocket.accept()
+WebSocketRoute -> Broadcaster: raw_log_broadcaster.add_client(websocket)
+activate Broadcaster
+Broadcaster -> Broadcaster: Add client to subscribers list
+Broadcaster --> WebSocketRoute: Client registered
+deactivate Broadcaster
+WebSocketRoute --> WSHook: Connection established
+deactivate WebSocketRoute
+
+WSHook -> WSHook: setConnected(true)
+WSHook --> LogsPage: connected = true
+deactivate WSHook
+
+LogsPage -> LogsPage: useEffect detects connected
+LogsPage -> WSHook: subscribe(activeLogSource)
+activate WSHook
+WSHook -> WSHook: ws.send(JSON.stringify({type: 'subscribe', log_source: 'auth'}))
+WSHook -> WebSocketRoute: Subscribe message
+activate WebSocketRoute
+WebSocketRoute -> Broadcaster: raw_log_broadcaster.subscribe(client, 'auth')
+activate Broadcaster
+Broadcaster -> Broadcaster: Add subscription
+Broadcaster --> WebSocketRoute: Subscription confirmed
+deactivate Broadcaster
+WebSocketRoute --> WSHook: {type: 'subscribed', log_source: 'auth'}
+deactivate WebSocketRoute
+WSHook --> LogsPage: Subscription active
+deactivate WSHook
+
+LogsPage -> LogsPage: Render RawLogViewer component
+LogsPage -> RawViewer: <RawLogViewer logs={rawLogs} />
+activate RawViewer
+RawViewer --> Browser: Display live log viewer
+deactivate RawViewer
+
+note over Broadcaster
+    When new log arrives from ingestion:
+    1. raw_log_broadcaster.broadcast('auth', log_line)
+    2. Filters clients subscribed to 'auth'
+    3. Sends log to each client
+end note
+
+Broadcaster -> WebSocketRoute: Broadcast log to subscribed clients
+activate WebSocketRoute
+WebSocketRoute -> WSHook: ws.send(JSON.stringify({type: 'raw_log', log_source: 'auth', ...}))
+deactivate WebSocketRoute
+WSHook -> WSHook: onmessage handler
+WSHook -> WSHook: Add log to logsCacheRef[log_source]
+WSHook -> WSHook: setLogs(prevLogs => [...prevLogs, message])
+WSHook --> LogsPage: New log added to state
+deactivate WSHook
+
+LogsPage -> LogsPage: Re-render with new log
+LogsPage -> RawViewer: Update with new logs
+activate RawViewer
+RawViewer --> Browser: Display new log in real-time
+deactivate RawViewer
+
+Browser -> LogsPage: User clicks "Stop Live"
+LogsPage -> LogsPage: setLiveMode(false)
+LogsPage -> WSHook: disconnect()
+activate WSHook
+WSHook -> WSHook: ws.close()
+WSHook -> WebSocketRoute: WebSocket close
+activate WebSocketRoute
+WebSocketRoute -> Broadcaster: raw_log_broadcaster.remove_client(websocket)
+activate Broadcaster
+Broadcaster -> Broadcaster: Remove client from subscribers
+deactivate Broadcaster
+deactivate WebSocketRoute
+WSHook -> WSHook: setConnected(false)
+WSHook --> LogsPage: Disconnected
+deactivate WSHook
+LogsPage -> LogsPage: clearLogs()
+LogsPage -> LogsPage: Switch back to normal table view
+LogsPage --> Browser: Display normal logs table
+deactivate LogsPage
+
+note over Browser, MongoDB
+    **Key Components:**
+    - Frontend: React components, hooks, services
+    - Backend: FastAPI routes, services, MongoDB
+    - Real-time: WebSocket for live monitoring
+    - Export: PDF generation with reportlab
+    - ML: Integration for log analysis
+end note
+
+@enduml

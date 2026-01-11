@@ -28,8 +28,11 @@ See `docs/ML_OPERATIONS.md` for:
 - Retraining and metrics endpoints
 - DB collections for ML predictions/training history/feature cache
 
-### Remote log forwarding (many VMs)
+### Log ingestion
 
-The backend exposes an HTTP ingestion endpoint (`POST /api/logs/ingest`). To collect logs from **many VMs**, run the included forwarding agent on each VM:
+The backend automatically monitors local log files on the server:
+- Log ingestion starts automatically with the backend server
+- Monitors log files: `/var/log/auth.log`, `/var/log/ufw.log`, `/var/log/kern.log`, `/var/log/syslog`, `/var/log/messages`
+- Logs are parsed and stored directly in MongoDB
 
-- `backend/agent/log_forwarder.py` (see `backend/agent/README.md`)
+The backend also exposes an HTTP ingestion endpoint (`POST /api/logs/ingest`) for manual log ingestion and batch processing.
