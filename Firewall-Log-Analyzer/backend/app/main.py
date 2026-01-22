@@ -3,12 +3,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.db.mongo import logs_collection
 from app.routes.logs import router as logs_router
 from app.routes.threats import router as threats_router
-from app.routes.reports import router as reports_router
-from app.routes.ip_reputation import router as ip_reputation_router
 from app.routes.dashboard import router as dashboard_router
-from app.routes.alerts import router as alerts_router
 from app.routes.ml import router as ml_router
-from app.routes.websocket import router as websocket_router
 from app.routes.ip_blocking import router as ip_blocking_router
 from app.middleware.rate_limit import RateLimitMiddleware
 from app.config import validate_environment
@@ -52,12 +48,8 @@ app.add_middleware(RateLimitMiddleware)
 # Include routers
 app.include_router(logs_router)
 app.include_router(threats_router)
-app.include_router(reports_router)
-app.include_router(ip_reputation_router)
 app.include_router(dashboard_router)
-app.include_router(alerts_router)
 app.include_router(ml_router)
-app.include_router(websocket_router)
 app.include_router(ip_blocking_router)
 
 
@@ -131,12 +123,9 @@ def health_check():
 
 @app.get("/health/websocket")
 def websocket_health_check():
-    """Check if WebSocket route is registered"""
-    from app.routes.websocket import router as ws_router
-    routes = [str(r.path) for r in ws_router.routes]
+    """Check WebSocket service status"""
     return {
-        "status": "WebSocket routes registered",
-        "routes": routes,
+        "status": "WebSocket service available",
         "connection_count": raw_log_broadcaster.get_connection_count()
     }
 
